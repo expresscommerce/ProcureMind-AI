@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --radius: 6px;
+  }
+}
+
+@layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Ensure no shadows on cards by default, add shadow-sm on hover as requested */
+/* We'll handle this in the Card component or globally if needed, but doing it in the component is better. */

@@ -98,7 +98,7 @@ def build_project_index(project_id: str, db_documents):
     vectorstore = FAISS.from_documents(docs_to_index, embeddings)
     vectorstore.save_local(get_index_path(project_id))
 
-def ask_question(project_id: str, question: str) -> dict:
+def ask_question(project_id: str, question: str, db=None) -> dict:
     index_path = get_index_path(project_id)
     if not os.path.exists(index_path):
         return {
@@ -118,13 +118,34 @@ def ask_question(project_id: str, question: str) -> dict:
     retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
     docs = retriever.invoke(question)
     
-    if not docs:
+    if not docs and not db:
         return {
             "answer": "I could not find any relevant information in the uploaded documents to answer your question.",
             "citation": "None"
         }
         
+    summary_context = ""
+    if db is not None:
+        try:
+            import models
+            result = db.query(models.Result).filter_by(project_id=project_id).first()
+            if result:
+                rec = result.recommendation or {}
+                rec_vendor = rec.get("recommended_vendor")
+                rec_rationale = rec.get("recommendation_rationale")
+                if rec_vendor:
+                    summary_context += f"[System Analysis] Recommended Vendor: {rec_vendor}. Rationale: {rec_rationale}.\n"
+                scores = rec.get("vendor_scores", [])
+                if scores:
+                    scores_str = ", ".join([f"{s.get('vendor_name')}: {s.get('weighted_total')}" for s in scores])
+                    summary_context += f"[System Analysis] Vendor Scores/Rankings: {scores_str}.\n"
+        except Exception as e:
+            print(f"Error loading system context for QA: {e}")
+
     context = ""
+    if summary_context:
+        context += summary_context + "\n"
+        
     citations = []
     for i, doc in enumerate(docs):
         context += f"[Doc {i+1}] Source: {doc.metadata.get('source')}, Page: {doc.metadata.get('page')}\n{doc.page_content}\n\n"
@@ -147,7 +168,12 @@ Question: {question}
     answer_text = response.content
     
     unique_citations = list(dict.fromkeys(citations))
-    citation_str = "Source: " + "; ".join(unique_citations)
+    if not unique_citations and summary_context:
+        citation_str = "Source: System Analysis Results"
+    else:
+        citation_str = "Source: " + "; ".join(unique_citations)
+        if summary_context:
+            citation_str += "; System Analysis Results"
     
     return {
         "answer": answer_text.strip(),

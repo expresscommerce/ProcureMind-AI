@@ -415,9 +415,9 @@ class AskRequest(BaseModel):
     question: str
 
 @app.post("/projects/{project_id}/ask")
-def ask_question_endpoint(project_id: str, request: AskRequest, current_user: User = Depends(get_current_user)):
+def ask_question_endpoint(project_id: str, request: AskRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     try:
-        response = agent.ask_question(project_id, request.question)
+        response = agent.ask_question(project_id, request.question, db)
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

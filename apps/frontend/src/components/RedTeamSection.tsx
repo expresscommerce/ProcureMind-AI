@@ -36,7 +36,7 @@ export function RedTeamSection({
   return (
     <div className="space-y-4">
       {/* Main Recommendation */}
-      <div className="border border-rule rounded-md bg-surface p-4 space-y-2">
+      <div className="border border-rule rounded-md bg-surface p-6 space-y-3">
         <div className="text-xs font-semibold text-verdigris uppercase tracking-wider mb-1">
           Recommended Vendor
         </div>
@@ -52,7 +52,7 @@ export function RedTeamSection({
       <div className="border border-rule rounded-md bg-surface overflow-hidden">
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-paper/50 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-navy"
+          className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-paper/50 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-navy"
         >
           <span className="text-sm font-medium text-ink">
             Why not {redTeam.runner_up_vendor}?
@@ -63,7 +63,7 @@ export function RedTeamSection({
         </button>
 
         {isExpanded && (
-          <div className="px-4 pb-4 space-y-4 border-t border-rule pt-3 animate-in fade-in duration-200">
+          <div className="px-6 pb-6 space-y-6 border-t border-rule pt-4 animate-in fade-in duration-200">
             {/* Red-team argument */}
             <div className="space-y-1.5">
               <span className="text-xs font-semibold text-audit-red uppercase tracking-wider">

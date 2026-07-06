@@ -15,7 +15,7 @@ export function InsightCallout({ insight }: InsightCalloutProps) {
   }
 
   return (
-    <div className="border border-rule rounded-md bg-surface p-4 space-y-2">
+    <div className="border border-rule rounded-md bg-surface p-6 space-y-3">
       <div className="flex items-center gap-2">
         <span className="text-xs font-semibold text-navy uppercase tracking-wider">
           Worth noticing

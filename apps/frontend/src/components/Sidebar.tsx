@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/components/AuthProvider";
 
 const NAV_GROUPS = [
   {
@@ -25,9 +26,10 @@ const NAV_GROUPS = [
     ]
   },
   {
-    title: "3. Reporting",
+    title: "3. Reporting & Feedback",
     items: [
       { name: "Executive Summary", href: "/summary" },
+      { name: "Log Outcomes", href: "/outcomes" },
     ]
   },
   {
@@ -40,6 +42,7 @@ const NAV_GROUPS = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { isAdmin } = useAuth();
 
   return (
     <aside className="w-[240px] fixed inset-y-0 left-0 bg-paper border-r border-rule flex flex-col z-20">
@@ -71,6 +74,26 @@ export function Sidebar() {
             })}
           </div>
         ))}
+
+        {/* Admin section - shown below a divider, unnumbered */}
+        {isAdmin && (
+          <div className="pt-4 border-t border-rule mt-4 space-y-1">
+            <h3 className="px-3 text-xs font-semibold text-ink-muted uppercase tracking-wider mb-2">
+              System Administration
+            </h3>
+            <Link
+              href="/admin/ml-control-center"
+              className={cn(
+                "block px-3 py-2 text-sm font-medium rounded-sm transition-colors outline-none focus-visible:outline-2 focus-visible:outline-navy focus-visible:-outline-offset-2",
+                pathname === "/admin/ml-control-center"
+                  ? "bg-navy/5 text-navy font-semibold"
+                  : "text-ink-muted hover:text-ink hover:bg-rule/30"
+              )}
+            >
+              ML Control Center
+            </Link>
+          </div>
+        )}
       </nav>
       <div className="p-4 border-t border-rule flex flex-col gap-2">
         <button

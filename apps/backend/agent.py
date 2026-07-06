@@ -213,6 +213,354 @@ Excerpt:
     return vendors
 
 
+async def generate_plain_language(all_cost_items, all_risks, all_compliance, all_sla) -> dict:
+    """Generate plain-language explanations for each risk/cost/compliance/SLA item."""
+    llm = get_llm()
+    items_data = {
+        "costs": all_cost_items[:10],  # Limit to avoid token overflow
+        "risks": all_risks[:10],
+        "compliance": all_compliance[:10],
+        "sla": all_sla[:10]
+    }
+    
+    prompt = f"""You are ProcureMind AI. Your job is to translate technical procurement data into plain English that someone who has never seen a vendor proposal would understand.
+
+For each item below, write a clear, specific 1-2 sentence explanation of what it means and why it matters to the buyer. Ground every sentence in the actual values — do not generalize.
+
+Return strictly as valid JSON without markdown wrapping. Format:
+{{
+  "cost_explanations": [
+    {{"id": "item-id", "plain_language": "You'd be paying $X for Y, but the audit found the real cost is $Z — that's $N more than expected."}}
+  ],
+  "risk_explanations": [
+    {{"id": "item-id", "plain_language": "This vendor's financial health score is X/100, meaning there's a real chance they could have trouble meeting obligations."}}
+  ],
+  "compliance_explanations": [
+    {{"id": "item-id", "plain_language": "This vendor's SOC 2 certification expires on X — after that date, you'd have no assurance their security practices are audited."}}
+  ],
+  "sla_explanations": [
+    {{"id": "item-id", "plain_language": "The vendor promised 99.95% uptime but actually delivered 99.8% — that's roughly 8 more hours of downtime per year than agreed."}}
+  ]
+}}
+
+Data:
+{json.dumps(items_data, indent=2)}
+"""
+    try:
+        response = await llm.ainvoke(prompt)
+        data = response.content.strip()
+        if data.startswith("```json"):
+            data = data[7:]
+        if data.endswith("```"):
+            data = data[:-3]
+        return json.loads(data)
+    except Exception as e:
+        print("Failed to generate plain language:", e)
+        return {"cost_explanations": [], "risk_explanations": [], "compliance_explanations": [], "sla_explanations": []}
+
+
+async def generate_timeline_events(all_vendors, all_cost_items, all_risks, all_compliance, db_documents) -> list:
+    """TimelineAgent: extract contract timeline events per vendor."""
+    llm = get_llm()
+    
+    doc_texts = {}
+    for doc in db_documents:
+        if doc.raw_text:
+            doc_texts[doc.file_name] = doc.raw_text[:4000]
+    
+    context = {
+        "vendors": [{"name": v["name"], "category": v.get("category", "")} for v in all_vendors],
+        "cost_items": all_cost_items[:10],
+        "risks": all_risks[:10],
+        "compliance": all_compliance[:10],
+        "document_excerpts": doc_texts
+    }
+    
+    prompt = f"""You are ProcureMind AI TimelineAgent. Extract contract timeline events for each vendor.
+
+For each vendor, identify key dates and milestones across the contract term. Look for:
+1. Go-live / delivery dates
+2. Warranty expiration dates
+3. Fees that start in later years (e.g. Year-2 maintenance fees)
+4. Renewal / auto-renewal windows
+5. Price cap expirations
+6. Compliance certificate expiration dates
+7. Any other time-sensitive contractual events
+
+For each event, classify it as "positive" (protects the buyer) or "negative" (risk to the buyer).
+Also provide a plain_language explanation of what happens at that point.
+
+If a contract term is not explicitly stated, assume 3 years from today's date.
+Today's date: 2026-07-06.
+
+Return strictly as valid JSON without markdown wrapping. Format:
+{{
+  "vendors": [
+    {{
+      "vendor_name": "Vendor A",
+      "contract_start": "2026-07-06",
+      "contract_end": "2029-07-06",
+      "events": [
+        {{
+          "date": "2026-09-01",
+          "label": "Go-live",
+          "type": "positive",
+          "plain_language": "The vendor's solution goes live in your environment.",
+          "source_page": "1"
+        }}
+      ]
+    }}
+  ]
+}}
+
+Context:
+{json.dumps(context, indent=2)}
+"""
+    try:
+        response = await llm.ainvoke(prompt)
+        data = response.content.strip()
+        if data.startswith("```json"):
+            data = data[7:]
+        if data.endswith("```"):
+            data = data[:-3]
+        parsed = json.loads(data)
+        return parsed.get("vendors", [])
+    except Exception as e:
+        print("Failed to generate timeline events:", e)
+        return []
+
+
+async def generate_insight(all_vendors, all_cost_items, all_risks, all_compliance, all_sla) -> dict:
+    """InsightAgent: find the single most non-obvious observation."""
+    llm = get_llm()
+    
+    context = {
+        "vendors": all_vendors,
+        "cost_items": all_cost_items,
+        "risks": all_risks,
+        "compliance": all_compliance,
+        "sla": all_sla
+    }
+    
+    prompt = f"""You are ProcureMind AI InsightAgent. Your ONLY job is to find ONE genuinely non-obvious observation that a sharp human reviewer would catch but that standard cost/risk/compliance analysis might miss.
+
+Look for:
+- A mismatch in pricing units or basis between vendors (e.g. one quotes per-seat, another per-active-user)
+- An inconsistency between two sections of the same proposal
+- An assumption the standard analysis may have missed
+- A comparison the raw data enables but nobody computed directly
+- Something where the numbers don't add up across vendors when cross-referenced
+
+CRITICAL RULES:
+1. Do NOT repeat anything already identified as a risk, cost discrepancy, or compliance issue in the data below.
+2. If you genuinely cannot find something new and non-obvious, respond with found=false. Do NOT manufacture a weak insight.
+3. Base your insight ONLY on the actual data provided — no speculation or hallucination.
+
+Return strictly as valid JSON without markdown wrapping:
+{{
+  "found": true,
+  "insight": "One clear sentence describing the observation.",
+  "explanation": "2-3 sentences explaining why this matters and what the buyer should do about it.",
+  "evidence": "The specific data points that support this observation."
+}}
+
+OR if nothing genuinely new is found:
+{{
+  "found": false,
+  "insight": "No additional non-obvious issues were found beyond what the standard analysis already covers.",
+  "explanation": "The cost, risk, and compliance analyses appear to have captured the key considerations.",
+  "evidence": ""
+}}
+
+Data:
+{json.dumps(context, indent=2)}
+"""
+    try:
+        response = await llm.ainvoke(prompt)
+        data = response.content.strip()
+        if data.startswith("```json"):
+            data = data[7:]
+        if data.endswith("```"):
+            data = data[:-3]
+        return json.loads(data)
+    except Exception as e:
+        print("Failed to generate insight:", e)
+        return {"found": False, "insight": "Insight generation encountered an error.", "explanation": "", "evidence": ""}
+
+
+async def generate_recommendation(all_vendors, all_cost_items, all_risks, all_compliance, all_sla) -> dict:
+    """Recommendation Agent: score vendors and produce a recommendation."""
+    llm = get_llm()
+    
+    context = {
+        "vendors": all_vendors,
+        "cost_items": all_cost_items,
+        "risks": all_risks,
+        "compliance": all_compliance,
+        "sla": all_sla
+    }
+    
+    prompt = f"""You are ProcureMind AI Recommendation Agent. Based on the full analysis data, score each vendor and produce a recommendation.
+
+For each vendor, produce scores (0-100) for these criteria:
+- cost: How competitive and transparent is their pricing?
+- security: How strong is their security posture and compliance?
+- support: How good are their SLA commitments and track record?
+- warranty: How comprehensive are their warranty and indemnification terms?
+- delivery: How reasonable and reliable are their delivery timelines?
+
+Then recommend the top vendor with a clear justification.
+
+Return strictly as valid JSON without markdown wrapping:
+{{
+  "vendor_scores": [
+    {{
+      "vendor_name": "Vendor A",
+      "scores": {{
+        "cost": 85,
+        "security": 90,
+        "support": 75,
+        "warranty": 80,
+        "delivery": 70
+      }},
+      "weighted_total": 80,
+      "rank": 1
+    }}
+  ],
+  "recommended_vendor": "Vendor A",
+  "recommendation_rationale": "Vendor A scores highest overall because...",
+  "runner_up": "Vendor B",
+  "weights_used": {{
+    "cost": 30,
+    "security": 25,
+    "support": 20,
+    "warranty": 15,
+    "delivery": 10
+  }}
+}}
+
+Data:
+{json.dumps(context, indent=2)}
+"""
+    try:
+        response = await llm.ainvoke(prompt)
+        data = response.content.strip()
+        if data.startswith("```json"):
+            data = data[7:]
+        if data.endswith("```"):
+            data = data[:-3]
+        return json.loads(data)
+    except Exception as e:
+        print("Failed to generate recommendation:", e)
+        return {
+            "vendor_scores": [],
+            "recommended_vendor": "",
+            "recommendation_rationale": "Unable to generate recommendation.",
+            "runner_up": "",
+            "weights_used": {"cost": 30, "security": 25, "support": 20, "warranty": 15, "delivery": 10}
+        }
+
+
+async def generate_red_team(recommendation_data, all_vendors, all_cost_items, all_risks, all_compliance, all_sla) -> dict:
+    """RedTeamAgent: argue for the runner-up vendor against the recommendation."""
+    llm = get_llm()
+    
+    runner_up = recommendation_data.get("runner_up", "")
+    recommended = recommendation_data.get("recommended_vendor", "")
+    
+    if not runner_up or not recommended:
+        return {
+            "runner_up_case": "Not enough vendors to perform red-team analysis.",
+            "strongest_point": "",
+            "recommendation_response": "",
+            "runner_up_vendor": ""
+        }
+    
+    context = {
+        "recommendation": recommendation_data,
+        "vendors": all_vendors,
+        "cost_items": all_cost_items,
+        "risks": all_risks,
+        "compliance": all_compliance,
+        "sla": all_sla
+    }
+    
+    prompt = f"""You are ProcureMind AI RedTeamAgent. Your job is to construct the STRONGEST possible case for choosing {runner_up} over the recommended vendor {recommended}.
+
+Rules:
+1. Use ONLY values already present in the data below — do not hallucinate or speculate.
+2. Find the areas where {runner_up} genuinely outperforms {recommended}.
+3. Identify the strongest single argument for {runner_up}.
+4. Be fair but adversarial — your job is to pressure-test the recommendation.
+
+Return strictly as valid JSON without markdown wrapping:
+{{
+  "runner_up_vendor": "{runner_up}",
+  "runner_up_case": "A 2-3 sentence argument for why {runner_up} might be the better choice.",
+  "strongest_point": "The single strongest data-backed point in favor of {runner_up}.",
+  "areas_where_runner_up_wins": ["Area 1", "Area 2"]
+}}
+
+Data:
+{json.dumps(context, indent=2)}
+"""
+    try:
+        response = await llm.ainvoke(prompt)
+        data = response.content.strip()
+        if data.startswith("```json"):
+            data = data[7:]
+        if data.endswith("```"):
+            data = data[:-3]
+        red_team = json.loads(data)
+    except Exception as e:
+        print("Failed to generate red team analysis:", e)
+        return {
+            "runner_up_case": "Red-team analysis could not be generated.",
+            "strongest_point": "",
+            "recommendation_response": "",
+            "runner_up_vendor": runner_up
+        }
+    
+    # Second pass: recommendation responds to red-team's strongest point
+    response_prompt = f"""You are ProcureMind AI Recommendation Agent. The red-team agent argued for {runner_up} over your recommended vendor {recommended}.
+
+Their strongest argument: {red_team.get('strongest_point', 'N/A')}
+Full case: {red_team.get('runner_up_case', 'N/A')}
+
+Respond to this challenge. Either:
+1. Concede it's a genuine consideration the buyer should weigh, OR
+2. Explain why {recommended} still holds despite this point.
+
+Be honest. If the red-team has a valid point, acknowledge it. Use ONLY data from the analysis.
+
+Return strictly as valid JSON without markdown wrapping:
+{{
+  "response": "Your 2-3 sentence response addressing the red-team's strongest point.",
+  "concedes_point": true or false,
+  "final_recommendation_stands": true or false
+}}
+
+Original recommendation data:
+{json.dumps(recommendation_data, indent=2)}
+"""
+    try:
+        resp = await llm.ainvoke(response_prompt)
+        resp_data = resp.content.strip()
+        if resp_data.startswith("```json"):
+            resp_data = resp_data[7:]
+        if resp_data.endswith("```"):
+            resp_data = resp_data[:-3]
+        rec_response = json.loads(resp_data)
+        red_team["recommendation_response"] = rec_response.get("response", "")
+        red_team["concedes_point"] = rec_response.get("concedes_point", False)
+        red_team["final_recommendation_stands"] = rec_response.get("final_recommendation_stands", True)
+    except Exception as e:
+        print("Failed to generate recommendation response:", e)
+        red_team["recommendation_response"] = "Unable to generate response to red-team challenge."
+    
+    return red_team
+
+
 async def generate_summary_findings(all_vendors, all_cost_items, all_risks, all_compliance, all_sla) -> dict:
     llm = get_llm()
     summary_data = {
@@ -468,6 +816,7 @@ Excerpt:
             
     variance_sum = max(0, total_actual_sum - total_stated_sum)
     
+    # Phase 5 agents — run in sequence after core extraction
     try:
         exec_summary = await generate_summary_findings(all_vendors, all_cost_items, all_risks, all_compliance, all_sla)
     except Exception as e:
@@ -476,6 +825,41 @@ Excerpt:
             "key_findings": [],
             "recommended_actions": []
         }
+    
+    # Plain language explanations for Simple mode
+    try:
+        plain_lang = await generate_plain_language(all_cost_items, all_risks, all_compliance, all_sla)
+    except Exception as e:
+        print("Failed to generate plain language:", e)
+        plain_lang = {"cost_explanations": [], "risk_explanations": [], "compliance_explanations": [], "sla_explanations": []}
+    
+    # Timeline events
+    try:
+        timeline_events = await generate_timeline_events(all_vendors, all_cost_items, all_risks, all_compliance, db_documents)
+    except Exception as e:
+        print("Failed to generate timeline events:", e)
+        timeline_events = []
+    
+    # Recommendation
+    try:
+        recommendation = await generate_recommendation(all_vendors, all_cost_items, all_risks, all_compliance, all_sla)
+    except Exception as e:
+        print("Failed to generate recommendation:", e)
+        recommendation = {"vendor_scores": [], "recommended_vendor": "", "recommendation_rationale": "", "runner_up": "", "weights_used": {}}
+    
+    # Insight agent
+    try:
+        insight = await generate_insight(all_vendors, all_cost_items, all_risks, all_compliance, all_sla)
+    except Exception as e:
+        print("Failed to generate insight:", e)
+        insight = {"found": False, "insight": "Insight generation failed.", "explanation": "", "evidence": ""}
+    
+    # Red-team agent
+    try:
+        red_team = await generate_red_team(recommendation, all_vendors, all_cost_items, all_risks, all_compliance, all_sla)
+    except Exception as e:
+        print("Failed to generate red team:", e)
+        red_team = {"runner_up_case": "", "strongest_point": "", "recommendation_response": "", "runner_up_vendor": ""}
         
     return {
         "structured_proposal": {
@@ -504,5 +888,10 @@ Excerpt:
                 "items": all_sla
             },
             "executive_summary": exec_summary
-        }
+        },
+        "plain_language": plain_lang,
+        "timeline_events": timeline_events,
+        "recommendation": recommendation,
+        "insight": insight,
+        "red_team": red_team
     }

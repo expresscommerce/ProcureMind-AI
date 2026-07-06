@@ -22,3 +22,7 @@ langchain-openai
 jinja2
 openai
 tiktoken
+scikit-learn
+joblib
+pandas
+numpy

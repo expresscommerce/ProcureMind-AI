@@ -1,0 +1,15 @@
+ProcureMind AI Cold-Start Model v0 (Synthetic Training Data)
+============================================================
+Training samples: 250
+Validation samples: 50
+
+Metrics:
+  - Late Delivery Probability Prediction:
+      Accuracy: 0.5200
+      AUC:      0.6362
+  - Hidden Costs Materialized Prediction:
+      Accuracy: 0.6400
+      AUC:      0.6538
+  - General Risk Realized Score Prediction (0-10):
+      MAE:      2.7795
+      R2:       -0.0887

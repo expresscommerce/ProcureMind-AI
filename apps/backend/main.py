@@ -9,11 +9,15 @@ from supabase import create_client, Client
 import uuid
 
 from auth import get_current_user, User
-from db import get_db
-from models import Document, Project
+from db import get_db, SessionLocal
+from models import Document, Project, Result, ContractOutcome, ModelRegistry
 from document_parser import extract_text_and_tables
 from pydantic import BaseModel
+from typing import Optional, Dict, Any, List
 import agent
+from ml.features import FeatureExtractor
+from ml.predictor import predict_project_risk
+from ml.retrain import retrain_model_from_real_data, MIN_RETRAIN_THRESHOLD
 
 app = FastAPI(title="ProcureMind AI Backend")
 
@@ -211,7 +215,26 @@ def delete_vendor(project_id: str, vendor_name: str, current_user: User = Depend
 
 @app.post("/projects/{project_id}/weights")
 def set_weights(project_id: str, weights: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Save weights to the result record for this project
+    result = db.query(models.Result).filter_by(project_id=project_id, user_id=current_user.id).first()
+    if result and result.recommendation:
+        rec = dict(result.recommendation)
+        rec["weights_used"] = weights
+        result.recommendation = rec
+        db.commit()
     return {"status": "success", "weights": weights}
+
+class UserPreference(BaseModel):
+    view_mode: str = "simple"
+
+@app.get("/user-preferences")
+def get_user_preferences(current_user: User = Depends(get_current_user)):
+    # Return from Supabase directly - the frontend handles this via the Supabase client
+    return {"view_mode": "simple"}
+
+@app.put("/user-preferences")
+def update_user_preferences(prefs: UserPreference, current_user: User = Depends(get_current_user)):
+    return {"view_mode": prefs.view_mode}
 
 @app.post("/projects/{project_id}/policy-rules")
 def set_policy_rules(project_id: str, rules: list, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -233,6 +256,9 @@ async def run_pipeline(project_id: str, current_user: User = Depends(get_current
             {"name": "Feature Comparison", "status": "pending"},
             {"name": "Compliance Validation", "status": "pending"},
             {"name": "Vendor Scoring", "status": "pending"},
+            {"name": "Timeline Analysis", "status": "pending"},
+            {"name": "Insight Detection", "status": "pending"},
+            {"name": "Red-Team Review", "status": "pending"},
             {"name": "Executive Summary", "status": "pending"}
         ]
     }
@@ -265,6 +291,42 @@ async def run_pipeline(project_id: str, current_user: User = Depends(get_current
             db_docs = session.query(models.Document).filter_by(project_id=project_id).all()
             analysis = await agent.analyze_all_documents(db_docs)
             
+            # Extract feature snapshots for all vendors
+            feature_snapshot = {}
+            for v in analysis.get("structured_proposal", {}).get("vendors", []):
+                doc = next((d for d in db_docs if str(d.id) == v.get("id")), None)
+                raw_text = doc.raw_text if doc else ""
+                
+                v_costs = [c for c in analysis.get("cost_breakdown", {}).get("items", []) if c.get("vendor") == v.get("name")]
+                
+                v_risks_items = [r for r in analysis.get("risk_flags", {}).get("items", []) if r.get("vendor") == v.get("name")]
+                v_risk_data = {}
+                if v_risks_items:
+                    first_r = v_risks_items[0]
+                    v_risk_data = {
+                        "financialRisk": first_r.get("financialRisk", "low"),
+                        "securityRisk": first_r.get("securityRisk", "low"),
+                        "operationalRisk": first_r.get("operationalRisk", "low")
+                    }
+                
+                v_compliance = [c for c in analysis.get("policy_rules", {}).get("items", []) if c.get("vendor") == v.get("name")]
+                
+                v_sla = []
+                if "sla_metrics" in analysis:
+                    v_sla = [s for s in analysis["sla_metrics"].get("items", []) if s.get("vendor") == v.get("name")]
+                elif "score_results" in analysis and "sla_metrics" in analysis["score_results"]:
+                    v_sla = [s for s in analysis["score_results"]["sla_metrics"].get("items", []) if s.get("vendor") == v.get("name")]
+
+                v_features = FeatureExtractor.extract_features(
+                    vendor_data=v,
+                    cost_items=v_costs,
+                    risk_data=v_risk_data,
+                    compliance_items=v_compliance,
+                    sla_items=v_sla,
+                    raw_text=raw_text
+                )
+                feature_snapshot[v.get("id")] = v_features
+                
             score_results = analysis["score_results"]
             
             result = session.query(models.Result).filter_by(project_id=project_id).first()
@@ -276,7 +338,13 @@ async def run_pipeline(project_id: str, current_user: User = Depends(get_current
                     cost_breakdown=analysis["cost_breakdown"],
                     risk_flags=analysis["risk_flags"],
                     policy_rules=analysis["policy_rules"],
-                    score_results=score_results
+                    score_results=score_results,
+                    plain_language=analysis.get("plain_language", {}),
+                    timeline_events=analysis.get("timeline_events", []),
+                    recommendation=analysis.get("recommendation", {}),
+                    insight=analysis.get("insight", {}),
+                    red_team=analysis.get("red_team", {}),
+                    feature_snapshot=feature_snapshot
                 )
                 session.add(result)
             else:
@@ -285,6 +353,12 @@ async def run_pipeline(project_id: str, current_user: User = Depends(get_current
                 result.risk_flags = analysis["risk_flags"]
                 result.policy_rules = analysis["policy_rules"]
                 result.score_results = score_results
+                result.plain_language = analysis.get("plain_language", {})
+                result.timeline_events = analysis.get("timeline_events", [])
+                result.recommendation = analysis.get("recommendation", {})
+                result.insight = analysis.get("insight", {})
+                result.red_team = analysis.get("red_team", {})
+                result.feature_snapshot = feature_snapshot
             session.commit()
         except Exception as e:
             print("Error saving analysis results:", e)
@@ -329,7 +403,12 @@ def get_results(project_id: str, current_user: User = Depends(get_current_user),
         "policy_rules": result.policy_rules,
         "score_results": result.score_results,
         "sla_metrics": sla_metrics,
-        "summary": summary
+        "summary": summary,
+        "plain_language": result.plain_language or {},
+        "timeline_events": result.timeline_events or [],
+        "recommendation": result.recommendation or {},
+        "insight": result.insight or {},
+        "red_team": result.red_team or {}
     }
 
 class AskRequest(BaseModel):
@@ -475,6 +554,181 @@ def export_pdf(project_id: str, current_user: User = Depends(get_current_user), 
     pdf_bytes = HTML(string=rendered_html).write_pdf()
     
     return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=executive_summary_{project_id}.pdf"})
+
+
+# --- PHASE 6 OUTCOME LOGGING & MACHINE LEARNING ENDPOINTS ---
+
+class OutcomeSubmitSchema(BaseModel):
+    vendor_id: str
+    delivered_on_time: Optional[bool] = None
+    actual_delivery_days: Optional[int] = None
+    hidden_costs_materialized: Optional[bool] = None
+    actual_total_cost: Optional[float] = None
+    negotiation_asks_succeeded: Optional[Dict[str, bool]] = None
+    overall_satisfaction: Optional[int] = None
+    notes: Optional[str] = None
+
+@app.post("/projects/{project_id}/outcomes")
+def log_contract_outcome(
+    project_id: str,
+    payload: OutcomeSubmitSchema,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Verify project exists and belongs to user
+    project = db.query(models.Project).filter_by(id=project_id, user_id=current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+        
+    # Check if an outcome already exists for this vendor
+    existing = db.query(models.ContractOutcome).filter_by(project_id=project.id, vendor_id=payload.vendor_id).first()
+    
+    if existing:
+        # Update existing
+        existing.delivered_on_time = payload.delivered_on_time
+        existing.actual_delivery_days = payload.actual_delivery_days
+        existing.hidden_costs_materialized = payload.hidden_costs_materialized
+        existing.actual_total_cost = payload.actual_total_cost
+        existing.negotiation_asks_succeeded = payload.negotiation_asks_succeeded
+        existing.overall_satisfaction = payload.overall_satisfaction
+        existing.notes = payload.notes
+        existing.logged_by = current_user.id
+    else:
+        # Create new
+        outcome = models.ContractOutcome(
+            project_id=project.id,
+            vendor_id=payload.vendor_id,
+            delivered_on_time=payload.delivered_on_time,
+            actual_delivery_days=payload.actual_delivery_days,
+            hidden_costs_materialized=payload.hidden_costs_materialized,
+            actual_total_cost=payload.actual_total_cost,
+            negotiation_asks_succeeded=payload.negotiation_asks_succeeded or {},
+            overall_satisfaction=payload.overall_satisfaction,
+            notes=payload.notes,
+            logged_by=current_user.id
+        )
+        db.add(outcome)
+        
+    db.commit()
+    return {"status": "success", "message": "Contract outcome logged successfully"}
+
+@app.get("/projects/{project_id}/outcomes")
+def get_contract_outcomes(
+    project_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    project = db.query(models.Project).filter_by(id=project_id, user_id=current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+        
+    outcomes = db.query(models.ContractOutcome).filter_by(project_id=project.id).all()
+    return {
+        "outcomes": [
+            {
+                "id": str(o.id),
+                "vendor_id": o.vendor_id,
+                "delivered_on_time": o.delivered_on_time,
+                "actual_delivery_days": o.actual_delivery_days,
+                "hidden_costs_materialized": o.hidden_costs_materialized,
+                "actual_total_cost": o.actual_total_cost,
+                "negotiation_asks_succeeded": o.negotiation_asks_succeeded,
+                "overall_satisfaction": o.overall_satisfaction,
+                "notes": o.notes,
+                "logged_at": o.logged_at.isoformat() if o.logged_at else None
+            } for o in outcomes
+        ]
+    }
+
+def check_is_admin(user_id: str, db: Session) -> bool:
+    profile = db.query(models.Profile).filter_by(id=user_id).first()
+    if profile:
+        return profile.is_admin
+    # Auto-bootstrap profile as non-admin if missing
+    try:
+        profile = models.Profile(id=uuid.UUID(user_id) if isinstance(user_id, str) else user_id, is_admin=False)
+        db.add(profile)
+        db.commit()
+    except Exception as e:
+        print("Failed to auto-create profile:", e)
+        db.rollback()
+    return False
+
+@app.get("/auth/profile")
+def get_user_profile(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    profile = db.query(models.Profile).filter_by(id=current_user.id).first()
+    if not profile:
+        try:
+            profile = models.Profile(id=uuid.UUID(current_user.id), is_admin=False)
+            db.add(profile)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to create profile: {e}")
+    return {"id": str(profile.id), "is_admin": profile.is_admin, "email": current_user.email}
+
+@app.post("/projects/{project_id}/ml-risk-prediction")
+def get_ml_risk_prediction(
+    project_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    project = db.query(models.Project).filter_by(id=project_id, user_id=current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+        
+    result = db.query(models.Result).filter_by(project_id=project.id).first()
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis results not found")
+        
+    prediction_payload = predict_project_risk(db, result)
+    return prediction_payload
+
+@app.get("/ml/status")
+def get_ml_status(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not check_is_admin(current_user.id, db):
+        raise HTTPException(status_code=403, detail="Admin access required")
+        
+    real_count = db.query(models.ContractOutcome).count()
+    registry = db.query(models.ModelRegistry).order_by(models.ModelRegistry.trained_at.desc()).all()
+    
+    return {
+        "real_outcomes_count": real_count,
+        "threshold": MIN_RETRAIN_THRESHOLD,
+        "needs_more": max(0, MIN_RETRAIN_THRESHOLD - real_count),
+        "registry": [
+            {
+                "id": str(m.id),
+                "version": m.version,
+                "training_data_size": m.training_data_size,
+                "validation_metrics": o_metrics if isinstance((o_metrics := m.validation_metrics), dict) else {},
+                "is_active": m.is_active,
+                "trained_at": m.trained_at.isoformat() if m.trained_at else None
+            } for m in registry
+        ]
+    }
+
+@app.post("/ml/retrain")
+def trigger_ml_retraining(
+    force: bool = False,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    if not check_is_admin(current_user.id, db):
+        raise HTTPException(status_code=403, detail="Admin access required")
+        
+    res = retrain_model_from_real_data(force=force)
+    return res
+
 
 
 

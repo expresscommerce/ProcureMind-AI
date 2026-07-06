@@ -52,8 +52,8 @@ export function PipelineRunner() {
     try {
       await apiFetch(`/projects/${currentProject.id}/run`, { method: "POST" });
       setStatus({ ...status, status: "running" });
-    } catch (e: any) {
-      alert(`Run failed: ${e.message}`);
+    } catch (e: unknown) {
+      alert(`Run failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setLoading(false);
     }

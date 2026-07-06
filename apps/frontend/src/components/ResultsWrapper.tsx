@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { useProject } from "@/lib/project";
 import { apiFetch } from "@/lib/api";
 
-export function ResultsWrapper({ children }: { children: (results: any) => React.ReactNode }) {
+export function ResultsWrapper({ children }: { children: (results: Record<string, any> | null) => React.ReactNode }) {
   const { currentProject } = useProject();
-  const [results, setResults] = useState<any>(null);
+  const [results, setResults] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,8 +22,8 @@ export function ResultsWrapper({ children }: { children: (results: any) => React
       try {
         const data = await apiFetch(`/projects/${currentProject.id}/results`);
         setResults(data);
-      } catch (e: any) {
-        setError(e.message);
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : String(e));
       } finally {
         setLoading(false);
       }

@@ -6,23 +6,41 @@ import { RiskBadge } from "@/components/RiskBadge";
 import { Button } from "@/components/ui/button";
 import { ResultsWrapper } from "@/components/ResultsWrapper";
 import { Modal } from "@/components/Modal";
+import { useViewMode } from "@/lib/viewMode";
+import { PlainLanguageItem, getPlainLanguage } from "@/components/PlainLanguageView";
+import { GlossaryTerm } from "@/components/GlossaryTerm";
 
 export default function CompliancePage() {
   const [selectedCompliance, setSelectedCompliance] = useState<any>(null);
+  const { mode } = useViewMode();
 
   return (
     <ResultsWrapper>
       {(results) => {
         const COMPLIANCE_DATA = results?.policy_rules?.items || [];
+        const plainLang = results?.plain_language || {};
+
         return (
           <div className="space-y-8">
             <div className="flex items-start justify-between">
               <div>
-                <h1 className="font-serif text-3xl font-semibold text-ink mb-2">Compliance & Audit Trail</h1>
-                <p className="text-ink-muted">Track regulatory frameworks and missing compliance documentation.</p>
+                <h1 className="font-serif text-3xl font-semibold text-ink mb-2">
+                  {mode === "simple" ? "Compliance Check" : "Compliance & Audit Trail"}
+                </h1>
+                <p className="text-ink-muted">
+                  {mode === "simple"
+                    ? "Whether each vendor meets the security and regulatory standards your organization requires."
+                    : "Track regulatory frameworks and missing compliance documentation."}
+                </p>
               </div>
               <Button onClick={() => alert("Documentation request sent (simulated)")}>Request Documentation</Button>
             </div>
+
+            {mode === "simple" && COMPLIANCE_DATA.length > 0 && (
+              <div className="text-sm text-ink-muted border-l-2 border-navy pl-3">
+                Each vendor should have up-to-date certifications like <GlossaryTerm term="SOC 2">SOC 2</GlossaryTerm>, <GlossaryTerm term="GDPR">GDPR</GlossaryTerm>, and <GlossaryTerm term="ISO 27001">ISO 27001</GlossaryTerm>. Items marked &quot;Compliant&quot; are good. Anything else needs attention.
+              </div>
+            )}
 
             <div className="border border-rule rounded-md overflow-hidden bg-surface">
               <Table>
@@ -39,35 +57,61 @@ export default function CompliancePage() {
                 <TableBody>
                   {COMPLIANCE_DATA.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-ink-muted">No compliance data found.</TableCell>
-                    </TableRow>
-                  ) : COMPLIANCE_DATA.map((row: any) => (
-                    <TableRow key={row.id}>
-                      <TableCell className="font-medium text-ink">{row.vendor}</TableCell>
-                      <TableCell>{row.framework}</TableCell>
-                      <TableCell>
-                        {row.status === "Compliant" ? (
-                          <RiskBadge level="low" label="Compliant" />
-                        ) : row.status === "Under Review" ? (
-                          <RiskBadge level="medium" label="Under Review" />
-                        ) : (
-                          <RiskBadge level="high" label={row.status} />
-                        )}
-                      </TableCell>
-                      <TableCell className="font-mono tabular-nums">{row.expires}</TableCell>
-                      <TableCell className="font-mono tabular-nums">{row.findings}</TableCell>
-                      <TableCell className="text-right">
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="text-navy font-medium"
-                          onClick={() => setSelectedCompliance(row)}
-                        >
-                          View Report
-                        </Button>
+                      <TableCell colSpan={6} className="text-center py-8 text-ink-muted">
+                        {mode === "simple"
+                          ? "No compliance data yet. Upload vendor documents and run an analysis."
+                          : "No compliance data found."}
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : COMPLIANCE_DATA.map((row: any) => {
+                    const pl = getPlainLanguage(plainLang, row.id, "compliance");
+                    return (
+                      <TableRow key={row.id}>
+                        <TableCell className="font-medium text-ink">{row.vendor}</TableCell>
+                        <TableCell>
+                          <GlossaryTerm term={row.framework}>{row.framework}</GlossaryTerm>
+                        </TableCell>
+                        <TableCell>
+                          {mode === "simple" && pl ? (
+                            <PlainLanguageItem
+                              id={row.id}
+                              plainLanguage={pl}
+                              type="compliance"
+                              expertContent={
+                                row.status === "Compliant" ? (
+                                  <RiskBadge level="low" label="Compliant" />
+                                ) : row.status === "Under Review" ? (
+                                  <RiskBadge level="medium" label="Under Review" />
+                                ) : (
+                                  <RiskBadge level="high" label={row.status} />
+                                )
+                              }
+                            />
+                          ) : (
+                            row.status === "Compliant" ? (
+                              <RiskBadge level="low" label="Compliant" />
+                            ) : row.status === "Under Review" ? (
+                              <RiskBadge level="medium" label="Under Review" />
+                            ) : (
+                              <RiskBadge level="high" label={row.status} />
+                            )
+                          )}
+                        </TableCell>
+                        <TableCell className="font-mono tabular-nums">{row.expires}</TableCell>
+                        <TableCell className="font-mono tabular-nums">{row.findings}</TableCell>
+                        <TableCell className="text-right">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="text-navy font-medium"
+                            onClick={() => setSelectedCompliance(row)}
+                          >
+                            View Report
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>

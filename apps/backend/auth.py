@@ -41,15 +41,6 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         # Write error to a file so we can read it
         with open("jwt_error.log", "w") as f:
             f.write(str(e))
-        
-        # Fallback for debugging: get unverified claims
-        try:
-            unverified = jwt.get_unverified_claims(token)
-            user_id = unverified.get("sub")
-            if user_id:
-                return User(id=user_id, email=unverified.get("email", ""))
-        except:
-            pass
 
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

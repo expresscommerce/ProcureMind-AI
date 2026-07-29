@@ -4,6 +4,7 @@ load_dotenv()
 from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Response
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from supabase import create_client, Client
 import uuid
@@ -678,6 +679,17 @@ def get_user_profile(
             db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to create profile: {e}")
     return {"id": str(profile.id), "is_admin": profile.is_admin, "email": current_user.email}
+
+@app.get("/auth/check-email")
+def check_email(
+    email: str,
+    db: Session = Depends(get_db)
+):
+    result = db.execute(
+        sql_text("SELECT id FROM auth.users WHERE email = :email"),
+        {"email": email}
+    ).first()
+    return {"exists": result is not None}
 
 @app.post("/projects/{project_id}/ml-risk-prediction")
 def get_ml_risk_prediction(

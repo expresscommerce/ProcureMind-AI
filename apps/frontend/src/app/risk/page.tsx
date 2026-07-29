@@ -103,9 +103,7 @@ export default function RiskAssessmentPage() {
                         <TableCell>
                           {mode === "simple" && pl ? (
                             <PlainLanguageItem
-                              id={row.id}
                               plainLanguage={pl}
-                              type="risk"
                               expertContent={<ScoreBar score={row.overallScore} />}
                             />
                           ) : (

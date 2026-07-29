@@ -21,9 +21,9 @@ export default function OverviewPage() {
         // Compute summary values from results
         const totalSpend = results?.cost_breakdown?.total_spend || "$0";
         const discrepancies = results?.cost_breakdown?.discrepancies || "$0";
-        const vendorsAtRisk = results?.risk_flags?.items?.filter((i: any) => i.financialRisk === "high" || i.securityRisk === "high").length || 0;
+        const vendorsAtRisk = results?.risk_flags?.items?.filter((i: any) => i.financialRisk === "high" || i.securityRisk === "high")?.length ?? 0;
         const plainLang = results?.plain_language || {};
-        
+
         // Transform items to alerts for the table
         const alerts: any[] = [];
         if (results?.cost_breakdown?.items) {
@@ -76,7 +76,7 @@ export default function OverviewPage() {
 
             {/* Recommendation + Red-Team */}
             {results?.recommendation?.recommended_vendor && (
-              <RedTeamSection 
+              <RedTeamSection
                 redTeam={results?.red_team}
                 recommendation={results?.recommendation}
               />
@@ -84,7 +84,7 @@ export default function OverviewPage() {
 
             {/* What-if Scoring Simulator */}
             {results?.recommendation?.vendor_scores?.length > 0 && (
-              <WeightSimulator recommendation={results.recommendation} />
+              <WeightSimulator recommendation={results?.recommendation} />
             )}
 
             <div className="space-y-4">
@@ -121,9 +121,7 @@ export default function OverviewPage() {
                         </TableCell>
                         <TableCell className="text-ink-muted">
                           <PlainLanguageItem
-                            id={alert.id}
                             plainLanguage={alert.plainLanguage}
-                            type="cost"
                             expertContent={<span>{alert.details}</span>}
                           />
                         </TableCell>

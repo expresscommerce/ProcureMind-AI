@@ -74,9 +74,7 @@ export default function CompliancePage() {
                         <TableCell>
                           {mode === "simple" && pl ? (
                             <PlainLanguageItem
-                              id={row.id}
                               plainLanguage={pl}
-                              type="compliance"
                               expertContent={
                                 row.status === "Compliant" ? (
                                   <RiskBadge level="low" label="Compliant" />

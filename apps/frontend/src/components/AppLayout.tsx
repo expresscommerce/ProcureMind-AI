@@ -6,6 +6,7 @@ import { useProject } from "@/lib/project";
 import { useState, useEffect } from "react";
 import { Button } from "./ui/button";
 import { AskDrawer } from "./AskDrawer";
+import { TourProvider } from "./TourProvider";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { session, isLoading: authLoading } = useAuth();
@@ -73,6 +74,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen bg-paper">
       <Sidebar />
+      <TourProvider />
       <main className="flex-1 pl-[240px]">
         <div className="max-w-[1280px] mx-auto p-8 animate-in fade-in duration-500">
           {children}

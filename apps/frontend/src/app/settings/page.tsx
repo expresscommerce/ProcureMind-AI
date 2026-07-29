@@ -1,7 +1,20 @@
+"use client";
+
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
+const LS_KEY = "procuremind-tour-seen";
+
 export default function SettingsPage() {
+  const router = useRouter();
+
+  const handleRestartTour = () => {
+    localStorage.removeItem(LS_KEY);
+    router.push("/");
+    router.refresh();
+  };
+
   return (
     <div className="space-y-8">
       <div>
@@ -32,6 +45,16 @@ export default function SettingsPage() {
               />
             </div>
             <Button>Save Changes</Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Walkthrough</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-ink-muted mb-4">Replay the initial walkthrough tour that guides you through the app.</p>
+            <Button onClick={handleRestartTour}>Restart Walkthrough</Button>
           </CardContent>
         </Card>
 

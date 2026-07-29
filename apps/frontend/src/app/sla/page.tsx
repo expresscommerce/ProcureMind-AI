@@ -71,9 +71,7 @@ export default function SLATrackerPage() {
                         <TableCell>
                           {mode === "simple" && pl ? (
                             <PlainLanguageItem
-                              id={row.id}
                               plainLanguage={pl}
-                              type="sla"
                               expertContent={
                                 row.status === "met" ? (
                                   <span className="text-verdigris font-medium text-sm">Target Met</span>

@@ -104,9 +104,7 @@ export default function CostAnalysisPage() {
                           <TableCell>{row.category}</TableCell>
                           <TableCell>
                             <PlainLanguageItem
-                              id={row.id}
                               plainLanguage={pl}
-                              type="cost"
                               expertContent={
                                 row.hasDiscrepancy ? (
                                   <HiddenCostAnnotation statedPrice={row.statedPrice} correctedPrice={row.actualPrice} />

@@ -57,10 +57,23 @@ export function Sidebar() {
             </h3>
             {group.items.map((item) => {
               const isActive = pathname === item.href;
+              const tourAttr = item.href === "/" ? "nav-overview"
+                : item.href === "/documents" ? "nav-documents"
+                : item.href === "/vendors" ? "nav-vendors"
+                : item.href === "/comparison" ? "nav-comparison"
+                : item.href === "/cost" ? "nav-cost"
+                : item.href === "/risk" ? "nav-risk"
+                : item.href === "/compliance" ? "nav-compliance"
+                : item.href === "/sla" ? "nav-sla"
+                : item.href === "/summary" ? "nav-summary"
+                : item.href === "/outcomes" ? "nav-outcomes"
+                : item.href === "/settings" ? "nav-settings"
+                : undefined;
               return (
                 <Link
                   key={item.href}
                   href={item.href}
+                  data-tour={tourAttr}
                   className={cn(
                     "block px-3 py-2 text-sm font-medium rounded-sm transition-colors outline-none focus-visible:outline-2 focus-visible:outline-navy focus-visible:-outline-offset-2",
                     isActive 
@@ -98,6 +111,7 @@ export function Sidebar() {
       <div className="p-4 border-t border-rule flex flex-col gap-2">
         <button
           onClick={() => window.dispatchEvent(new CustomEvent("open-ask-drawer"))}
+          data-tour="ask-question"
           className="text-left px-3 py-2 text-sm font-medium text-navy hover:bg-navy/5 rounded-sm outline-none focus-visible:outline-2 focus-visible:outline-navy"
         >
           Ask a Question

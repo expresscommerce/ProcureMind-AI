@@ -14,6 +14,7 @@ from models import Document, Project, Result, ContractOutcome, ModelRegistry
 from document_parser import extract_text_and_tables
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
+import models
 import agent
 from ml.features import FeatureExtractor
 from ml.predictor import predict_project_risk
@@ -67,13 +68,13 @@ async def upload_document(
         supabase.storage.from_("proposals").upload(
             path=file_path,
             file=file_bytes,
-            file_options={"content-type": file.content_type}
+            file_options={"content-type": file.content_type or "application/octet-stream"}
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload to storage: {str(e)}")
 
     # Parse document
-    extracted_text = extract_text_and_tables(file_bytes, file.content_type)
+    extracted_text = extract_text_and_tables(file_bytes, file.content_type or "application/octet-stream")
     
     # Save to database
     document = Document(
@@ -101,7 +102,7 @@ async def upload_document(
         db.add(result)
     
     if not result.structured_proposal:
-        result.structured_proposal = {"vendors": []}
+        result.structured_proposal = {"vendors": []}  # type: ignore[assignment]
     if "vendors" not in result.structured_proposal:
         result.structured_proposal["vendors"] = []
         
@@ -117,7 +118,7 @@ async def upload_document(
             "risk": "low"
         })
         # SQLAlchemy JSON mutations might need to be explicitly flagged or re-assigned
-        result.structured_proposal = {"vendors": vendors}
+        result.structured_proposal = {"vendors": vendors}  # type: ignore[assignment]
         
     db.commit()
     db.refresh(document)
@@ -129,7 +130,7 @@ async def upload_document(
     }
 
 # Dummy status storage for simplicity in this phase
-pipeline_status = {}
+pipeline_status: Dict[str, Any] = {}
 
 @app.post("/projects")
 def create_project(name: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -158,7 +159,7 @@ def list_documents(project_id: str, current_user: User = Depends(get_current_use
     return [
         {
             "id": str(d.id),
-            "vendor": vendor_map.get(str(d.id), "Pending Extraction..."), 
+            "vendor": vendor_map.get(str(d.id), "Pending Extraction..."),  # type: ignore[arg-type]
             "name": d.file_name,
             "type": d.file_type or "Unknown",
             "date": d.created_at.strftime("%Y-%m-%d"),
@@ -175,7 +176,7 @@ def delete_document(project_id: str, document_id: str, current_user: User = Depe
     # Try to delete from supabase storage
     try:
         supabase = get_supabase()
-        supabase.storage.from_("proposals").remove([doc.file_path])
+        supabase.storage.from_("proposals").remove([str(doc.file_path)])
     except Exception as e:
         print(f"Failed to delete from storage: {e}")
         
@@ -184,7 +185,7 @@ def delete_document(project_id: str, document_id: str, current_user: User = Depe
     if result and result.structured_proposal and "vendors" in result.structured_proposal:
         vendors = result.structured_proposal["vendors"]
         updated_vendors = [v for v in vendors if v.get("id") != document_id]
-        result.structured_proposal = {"vendors": updated_vendors}
+        result.structured_proposal = {"vendors": updated_vendors}  # type: ignore[assignment]
         
     db.delete(doc)
     db.commit()
@@ -198,8 +199,9 @@ def download_document(project_id: str, document_id: str, current_user: User = De
     try:
         supabase = get_supabase()
         # Create a signed URL valid for 60 seconds
-        res = supabase.storage.from_("proposals").create_signed_url(doc.file_path, 60)
-        return RedirectResponse(url=res["signedURL"])
+        res = supabase.storage.from_("proposals").create_signed_url(str(doc.file_path), 60)
+        signed_url = res.get("signedURL") or res.get("signedUrl") or ""
+        return RedirectResponse(url=signed_url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate download link: {e}")
 
@@ -209,7 +211,7 @@ def delete_vendor(project_id: str, vendor_name: str, current_user: User = Depend
     if result and result.structured_proposal and "vendors" in result.structured_proposal:
         vendors = result.structured_proposal["vendors"]
         updated_vendors = [v for v in vendors if v.get("name") != vendor_name]
-        result.structured_proposal = {"vendors": updated_vendors}
+        result.structured_proposal = {"vendors": updated_vendors}  # type: ignore[assignment]
         db.commit()
     return {"status": "deleted"}
 
@@ -218,9 +220,9 @@ def set_weights(project_id: str, weights: dict, current_user: User = Depends(get
     # Save weights to the result record for this project
     result = db.query(models.Result).filter_by(project_id=project_id, user_id=current_user.id).first()
     if result and result.recommendation:
-        rec = dict(result.recommendation)
+        rec = dict(result.recommendation)  # type: ignore[arg-type]
         rec["weights_used"] = weights
-        result.recommendation = rec
+        result.recommendation = rec  # type: ignore[assignment]
         db.commit()
     return {"status": "success", "weights": weights}
 
@@ -323,7 +325,7 @@ async def run_pipeline(project_id: str, current_user: User = Depends(get_current
                     risk_data=v_risk_data,
                     compliance_items=v_compliance,
                     sla_items=v_sla,
-                    raw_text=raw_text
+                    raw_text=str(raw_text)
                 )
                 feature_snapshot[v.get("id")] = v_features
                 
@@ -348,17 +350,17 @@ async def run_pipeline(project_id: str, current_user: User = Depends(get_current
                 )
                 session.add(result)
             else:
-                result.structured_proposal = analysis["structured_proposal"]
-                result.cost_breakdown = analysis["cost_breakdown"]
-                result.risk_flags = analysis["risk_flags"]
-                result.policy_rules = analysis["policy_rules"]
-                result.score_results = score_results
-                result.plain_language = analysis.get("plain_language", {})
-                result.timeline_events = analysis.get("timeline_events", [])
-                result.recommendation = analysis.get("recommendation", {})
-                result.insight = analysis.get("insight", {})
-                result.red_team = analysis.get("red_team", {})
-                result.feature_snapshot = feature_snapshot
+                result.structured_proposal = analysis["structured_proposal"]  # type: ignore[assignment]
+                result.cost_breakdown = analysis["cost_breakdown"]  # type: ignore[assignment]
+                result.risk_flags = analysis["risk_flags"]  # type: ignore[assignment]
+                result.policy_rules = analysis["policy_rules"]  # type: ignore[assignment]
+                result.score_results = score_results  # type: ignore[assignment]
+                result.plain_language = analysis.get("plain_language", {})  # type: ignore[assignment]
+                result.timeline_events = analysis.get("timeline_events", [])  # type: ignore[assignment]
+                result.recommendation = analysis.get("recommendation", {})  # type: ignore[assignment]
+                result.insight = analysis.get("insight", {})  # type: ignore[assignment]
+                result.red_team = analysis.get("red_team", {})  # type: ignore[assignment]
+                result.feature_snapshot = feature_snapshot  # type: ignore[assignment]
             session.commit()
         except Exception as e:
             print("Error saving analysis results:", e)
@@ -585,14 +587,21 @@ def log_contract_outcome(
     
     if existing:
         # Update existing
-        existing.delivered_on_time = payload.delivered_on_time
-        existing.actual_delivery_days = payload.actual_delivery_days
-        existing.hidden_costs_materialized = payload.hidden_costs_materialized
-        existing.actual_total_cost = payload.actual_total_cost
-        existing.negotiation_asks_succeeded = payload.negotiation_asks_succeeded
-        existing.overall_satisfaction = payload.overall_satisfaction
-        existing.notes = payload.notes
-        existing.logged_by = current_user.id
+        if payload.delivered_on_time is not None:
+            existing.delivered_on_time = payload.delivered_on_time  # type: ignore[assignment]
+        if payload.actual_delivery_days is not None:
+            existing.actual_delivery_days = payload.actual_delivery_days  # type: ignore[assignment]
+        if payload.hidden_costs_materialized is not None:
+            existing.hidden_costs_materialized = payload.hidden_costs_materialized  # type: ignore[assignment]
+        if payload.actual_total_cost is not None:
+            existing.actual_total_cost = payload.actual_total_cost  # type: ignore[assignment]
+        if payload.negotiation_asks_succeeded is not None:
+            existing.negotiation_asks_succeeded = payload.negotiation_asks_succeeded  # type: ignore[assignment]
+        if payload.overall_satisfaction is not None:
+            existing.overall_satisfaction = payload.overall_satisfaction  # type: ignore[assignment]
+        if payload.notes is not None:
+            existing.notes = payload.notes  # type: ignore[assignment]
+        existing.logged_by = uuid.UUID(current_user.id) if isinstance(current_user.id, str) else current_user.id  # type: ignore[assignment]
     else:
         # Create new
         outcome = models.ContractOutcome(
@@ -643,7 +652,7 @@ def get_contract_outcomes(
 def check_is_admin(user_id: str, db: Session) -> bool:
     profile = db.query(models.Profile).filter_by(id=user_id).first()
     if profile:
-        return profile.is_admin
+        return bool(profile.is_admin)
     # Auto-bootstrap profile as non-admin if missing
     try:
         profile = models.Profile(id=uuid.UUID(user_id) if isinstance(user_id, str) else user_id, is_admin=False)

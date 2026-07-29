@@ -42,7 +42,7 @@ class DeepInfraEmbeddings(Embeddings):
 def get_llm():
     return ChatOpenAI(
         model="meta-llama/Meta-Llama-3-70B-Instruct",
-        api_key=os.environ.get("DEEPINFRA_API_KEY"),
+        api_key=os.environ.get("DEEPINFRA_API_KEY", ""),
         base_url="https://api.deepinfra.com/v1/openai",
         temperature=0
     )
@@ -50,7 +50,7 @@ def get_llm():
 def get_embeddings():
     return DeepInfraEmbeddings(
         model="BAAI/bge-large-en-v1.5",
-        api_key=os.environ.get("DEEPINFRA_API_KEY"),
+        api_key=os.environ.get("DEEPINFRA_API_KEY", ""),
         base_url="https://api.deepinfra.com/v1/openai"
     )
 
@@ -165,7 +165,7 @@ Question: {question}
 """
     
     response = llm.invoke(prompt)
-    answer_text = response.content
+    answer_text = str(response.content)
     
     unique_citations = list(dict.fromkeys(citations))
     if not unique_citations and summary_context:
@@ -208,7 +208,7 @@ Excerpt:
         
         try:
             response = await llm.ainvoke(prompt)
-            data = response.content.strip()
+            data = str(response.content).strip()
             if data.startswith("```json"):
                 data = data[7:]
             if data.endswith("```"):
@@ -274,7 +274,7 @@ Data:
 """
     try:
         response = await llm.ainvoke(prompt)
-        data = response.content.strip()
+        data = str(response.content).strip()
         if data.startswith("```json"):
             data = data[7:]
         if data.endswith("```"):
@@ -344,7 +344,7 @@ Context:
 """
     try:
         response = await llm.ainvoke(prompt)
-        data = response.content.strip()
+        data = str(response.content).strip()
         if data.startswith("```json"):
             data = data[7:]
         if data.endswith("```"):
@@ -403,7 +403,7 @@ Data:
 """
     try:
         response = await llm.ainvoke(prompt)
-        data = response.content.strip()
+        data = str(response.content).strip()
         if data.startswith("```json"):
             data = data[7:]
         if data.endswith("```"):
@@ -470,7 +470,7 @@ Data:
 """
     try:
         response = await llm.ainvoke(prompt)
-        data = response.content.strip()
+        data = str(response.content).strip()
         if data.startswith("```json"):
             data = data[7:]
         if data.endswith("```"):
@@ -532,7 +532,7 @@ Data:
 """
     try:
         response = await llm.ainvoke(prompt)
-        data = response.content.strip()
+        data = str(response.content).strip()
         if data.startswith("```json"):
             data = data[7:]
         if data.endswith("```"):
@@ -571,7 +571,7 @@ Original recommendation data:
 """
     try:
         resp = await llm.ainvoke(response_prompt)
-        resp_data = resp.content.strip()
+        resp_data = str(resp.content).strip()
         if resp_data.startswith("```json"):
             resp_data = resp_data[7:]
         if resp_data.endswith("```"):
@@ -618,7 +618,7 @@ Audit Data:
 """
     try:
         response = await llm.ainvoke(prompt)
-        data = response.content.strip()
+        data = str(response.content).strip()
         if data.startswith("```json"):
             data = data[7:]
         if data.endswith("```"):
@@ -742,7 +742,7 @@ Excerpt:
 """
         try:
             response = await llm.ainvoke(prompt)
-            data = response.content.strip()
+            data = str(response.content).strip()
             if data.startswith("```json"):
                 data = data[7:]
             if data.endswith("```"):

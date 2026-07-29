@@ -12,7 +12,7 @@ def extract_text_and_tables(file_bytes: bytes, file_type: str) -> str:
         for page_num in range(len(doc)):
             page = doc[page_num]
             extracted_text += f"\n--- Page {page_num + 1} ---\n"
-            extracted_text += page.get_text("text")
+            extracted_text += str(page.get_text("text"))
         
         # pdfplumber for tables
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
@@ -22,7 +22,7 @@ def extract_text_and_tables(file_bytes: bytes, file_type: str) -> str:
                     extracted_text += f"\n--- Tables on Page {i + 1} ---\n"
                     for table in tables:
                         for row in table:
-                            extracted_text += " | ".join([str(cell).strip() if cell else "" for cell in row]) + "\n"
+                            extracted_text += " | ".join([cell.strip() if cell else "" for cell in row]) + "\n"
                         extracted_text += "\n"
                         
     elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" or file_type.endswith("docx"):

@@ -26,7 +26,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
             algorithms=["HS256"],
             options={"verify_aud": False}
         )
-        user_id: str = payload.get("sub")
+        user_id = payload.get("sub")
         email: str = payload.get("email", "")
         
         if user_id is None:

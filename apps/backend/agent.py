@@ -1,4 +1,5 @@
 import os
+import asyncio
 import faiss
 import pickle
 import httpx
@@ -28,7 +29,7 @@ class DeepInfraEmbeddings(Embeddings):
                 "model": self.model,
                 "input": batch
             }
-            response = httpx.post(f"{self.base_url}/embeddings", json=payload, headers=headers, timeout=60.0)
+            response = httpx.post(f"{self.base_url}/embeddings", json=payload, headers=headers, timeout=30.0)
             if response.status_code != 200:
                 raise Exception(f"DeepInfra embeddings failed: {response.text}")
             data = response.json()
@@ -44,7 +45,8 @@ def get_llm():
         model="meta-llama/Meta-Llama-3-70B-Instruct",
         api_key=os.environ.get("DEEPINFRA_API_KEY", ""),
         base_url="https://api.deepinfra.com/v1/openai",
-        temperature=0
+        temperature=0,
+        request_timeout=45
     )
 
 def get_embeddings():
@@ -181,6 +183,27 @@ Question: {question}
     }
 
 import json
+import re
+
+def clean_json_str(s: str) -> dict:
+    if not s or not s.strip():
+        raise ValueError("Empty response string from LLM")
+    cleaned = s.strip()
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:]
+    elif cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+    cleaned = cleaned.strip()
+    
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        match = re.search(r'(\{.*\}|\[.*\])', cleaned, re.DOTALL)
+        if match:
+            return json.loads(match.group(1))
+        raise
 
 async def extract_vendors(db_documents) -> list:
     if not db_documents:
@@ -207,14 +230,8 @@ Excerpt:
 """
         
         try:
-            response = await llm.ainvoke(prompt)
-            data = str(response.content).strip()
-            if data.startswith("```json"):
-                data = data[7:]
-            if data.endswith("```"):
-                data = data[:-3]
-                
-            parsed = json.loads(data)
+            response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=60)
+            parsed = clean_json_str(str(response.content))
             
             # Ensure unique IDs
             vendors.append({
@@ -273,7 +290,7 @@ Data:
 {json.dumps(items_data, indent=2)}
 """
     try:
-        response = await llm.ainvoke(prompt)
+        response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=60)
         data = str(response.content).strip()
         if data.startswith("```json"):
             data = data[7:]
@@ -343,7 +360,7 @@ Context:
 {json.dumps(context, indent=2)}
 """
     try:
-        response = await llm.ainvoke(prompt)
+        response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=60)
         data = str(response.content).strip()
         if data.startswith("```json"):
             data = data[7:]
@@ -402,7 +419,7 @@ Data:
 {json.dumps(context, indent=2)}
 """
     try:
-        response = await llm.ainvoke(prompt)
+        response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=60)
         data = str(response.content).strip()
         if data.startswith("```json"):
             data = data[7:]
@@ -469,7 +486,7 @@ Data:
 {json.dumps(context, indent=2)}
 """
     try:
-        response = await llm.ainvoke(prompt)
+        response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=60)
         data = str(response.content).strip()
         if data.startswith("```json"):
             data = data[7:]
@@ -531,7 +548,7 @@ Data:
 {json.dumps(context, indent=2)}
 """
     try:
-        response = await llm.ainvoke(prompt)
+        response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=60)
         data = str(response.content).strip()
         if data.startswith("```json"):
             data = data[7:]
@@ -570,7 +587,7 @@ Original recommendation data:
 {json.dumps(recommendation_data, indent=2)}
 """
     try:
-        resp = await llm.ainvoke(response_prompt)
+        resp = await asyncio.wait_for(llm.ainvoke(response_prompt), timeout=60)
         resp_data = str(resp.content).strip()
         if resp_data.startswith("```json"):
             resp_data = resp_data[7:]
@@ -617,7 +634,7 @@ Audit Data:
 {json.dumps(summary_data, indent=2)}
 """
     try:
-        response = await llm.ainvoke(prompt)
+        response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=60)
         data = str(response.content).strip()
         if data.startswith("```json"):
             data = data[7:]
@@ -639,7 +656,7 @@ Audit Data:
             ]
         }
 
-async def analyze_all_documents(db_documents) -> dict:
+async def analyze_all_documents(db_documents, progress_cb=None) -> dict:
     if not db_documents:
         return {
             "structured_proposal": {"vendors": []},
@@ -663,9 +680,17 @@ async def analyze_all_documents(db_documents) -> dict:
     
     risk_counts = {"high": 0, "medium": 0, "low": 0}
     
-    for doc in db_documents:
-        if not doc.raw_text:
+    readable_docs = [d for d in db_documents if d.raw_text and len(d.raw_text.strip()) >= 10]
+    total_docs = len(readable_docs)
+    
+    for doc_idx, doc in enumerate(db_documents):
+        if not doc.raw_text or len(doc.raw_text.strip()) < 10:
+            print(f"Skipping document '{doc.file_name}' from analysis because extracted text is empty/unreadable.")
             continue
+        
+        doc_label = doc.file_name.rsplit(".", 1)[0].replace("_", " ")
+        if progress_cb:
+            progress_cb(f"Auditing document {doc_idx + 1}/{total_docs}: {doc_label}")
             
         # Give the LLM a substantial preview of the document (up to 8000 chars)
         text_preview = doc.raw_text[:8000]
@@ -741,14 +766,8 @@ Excerpt:
 {text_preview}
 """
         try:
-            response = await llm.ainvoke(prompt)
-            data = str(response.content).strip()
-            if data.startswith("```json"):
-                data = data[7:]
-            if data.endswith("```"):
-                data = data[:-3]
-                
-            parsed = json.loads(data)
+            response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=50)
+            parsed = clean_json_str(str(response.content))
             
             vendor_info = parsed.get("vendor", {})
             v_name = vendor_info.get("name", doc.file_name.split(".")[0])
@@ -844,6 +863,7 @@ Excerpt:
     
     # Phase 5 agents — run in sequence after core extraction
     try:
+        if progress_cb: progress_cb("Generating executive summary...")
         exec_summary = await generate_summary_findings(all_vendors, all_cost_items, all_risks, all_compliance, all_sla)
     except Exception as e:
         print("Failed to generate executive summary:", e)
@@ -854,6 +874,7 @@ Excerpt:
     
     # Plain language explanations for Simple mode
     try:
+        if progress_cb: progress_cb("Generating plain language explanations...")
         plain_lang = await generate_plain_language(all_cost_items, all_risks, all_compliance, all_sla)
     except Exception as e:
         print("Failed to generate plain language:", e)
@@ -861,6 +882,7 @@ Excerpt:
     
     # Timeline events
     try:
+        if progress_cb: progress_cb("Building contract timeline...")
         timeline_events = await generate_timeline_events(all_vendors, all_cost_items, all_risks, all_compliance, db_documents)
     except Exception as e:
         print("Failed to generate timeline events:", e)
@@ -868,6 +890,7 @@ Excerpt:
     
     # Recommendation
     try:
+        if progress_cb: progress_cb("Scoring vendors & generating recommendation...")
         recommendation = await generate_recommendation(all_vendors, all_cost_items, all_risks, all_compliance, all_sla)
     except Exception as e:
         print("Failed to generate recommendation:", e)
@@ -875,6 +898,7 @@ Excerpt:
     
     # Insight agent
     try:
+        if progress_cb: progress_cb("Running insight analysis...")
         insight = await generate_insight(all_vendors, all_cost_items, all_risks, all_compliance, all_sla)
     except Exception as e:
         print("Failed to generate insight:", e)
@@ -882,6 +906,7 @@ Excerpt:
     
     # Red-team agent
     try:
+        if progress_cb: progress_cb("Running red-team analysis...")
         red_team = await generate_red_team(recommendation, all_vendors, all_cost_items, all_risks, all_compliance, all_sla)
     except Exception as e:
         print("Failed to generate red team:", e)

@@ -3,6 +3,25 @@ import fitz  # PyMuPDF
 import pdfplumber
 from docx import Document
 
+def validate_file_integrity(file_bytes: bytes, file_type: str) -> None:
+    if not file_bytes or len(file_bytes) == 0:
+        raise ValueError("Uploaded file is empty")
+    
+    file_type_lower = (file_type or "").lower()
+    if "pdf" in file_type_lower or file_type_lower.endswith("pdf"):
+        try:
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            if len(doc) == 0:
+                raise ValueError("PDF document contains no pages")
+            doc.close()
+        except Exception as e:
+            raise ValueError(f"Corrupted or unreadable PDF document: {str(e)}")
+    elif "word" in file_type_lower or file_type_lower.endswith("docx"):
+        try:
+            doc = Document(io.BytesIO(file_bytes))
+        except Exception as e:
+            raise ValueError(f"Corrupted or unreadable DOCX document: {str(e)}")
+
 def extract_text_and_tables(file_bytes: bytes, file_type: str) -> str:
     extracted_text = ""
     
@@ -44,3 +63,4 @@ def extract_text_and_tables(file_bytes: bytes, file_type: str) -> str:
             extracted_text = ""
 
     return extracted_text
+

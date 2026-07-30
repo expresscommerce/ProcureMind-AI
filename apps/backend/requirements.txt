@@ -26,3 +26,7 @@ scikit-learn
 joblib
 pandas
 numpy
+python-dotenv
+httpx
+langchain-core
+langchain-text-splitters

@@ -27,6 +27,7 @@ class Document(Base):
     file_path = Column(String, nullable=False) # Supabase storage path
     file_type = Column(String)
     raw_text = Column(Text)
+    status = Column(String, default="processing")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     project = relationship("Project", back_populates="documents")

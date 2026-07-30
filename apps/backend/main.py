@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 load_dotenv()
-from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Response
+from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Response, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text as sql_text
@@ -12,7 +12,7 @@ import uuid
 from auth import get_current_user, User
 from db import get_db, SessionLocal
 from models import Document, Project, Result, ContractOutcome, ModelRegistry
-from document_parser import extract_text_and_tables
+from document_parser import extract_text_and_tables, validate_file_integrity
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import models
@@ -39,15 +39,67 @@ def get_supabase() -> Client:
         raise ValueError("Supabase credentials not configured")
     return create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
+from db import engine
+
+@app.on_event("startup")
+def startup_db_migrations():
+    try:
+        with engine.connect() as conn:
+            conn.execute(sql_text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'processing';"))
+            conn.commit()
+    except Exception as e:
+        print("Startup DB migration notice:", e)
+
+def clear_analysis_result(result):
+    result.cost_breakdown = {"total_spend": "$0", "actual_spend": "$0", "discrepancies": "$0", "items": []}
+    result.risk_flags = {"high": 0, "medium": 0, "low": 0, "items": []}
+    result.policy_rules = {"items": []}
+    result.score_results = {}
+    result.plain_language = {}
+    result.timeline_events = []
+    result.recommendation = {}
+    result.insight = {}
+    result.red_team = {}
+    result.feature_snapshot = {}
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+def process_document_background(document_id: str, file_bytes: bytes, file_type: str):
+    session = SessionLocal()
+    try:
+        doc = session.query(models.Document).filter_by(id=document_id).first()
+        if not doc:
+            return
+            
+        extracted_text = extract_text_and_tables(file_bytes, file_type)
+        if extracted_text and len(extracted_text.strip()) > 10:
+            doc.raw_text = extracted_text
+            doc.status = "ready"
+        else:
+            print(f"Background extraction produced no readable text for doc {document_id}")
+            doc.raw_text = ""
+            doc.status = "failed"
+        session.commit()
+    except Exception as e:
+        print(f"Background extraction failed for doc {document_id}: {e}")
+        try:
+            doc = session.query(models.Document).filter_by(id=document_id).first()
+            if doc:
+                doc.status = "failed"
+                session.commit()
+        except Exception:
+            session.rollback()
+    finally:
+        session.close()
 
 @app.post("/projects/{project_id}/documents")
 async def upload_document(
     project_id: str,
     vendor_name: str = Form(...),
     file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -55,14 +107,19 @@ async def upload_document(
     project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not project:
         # Create it if it doesn't exist just for the sake of the API flow
-        # In a real app we'd have a separate POST /projects endpoint
         project = Project(id=project_id, name="Test Project", user_id=current_user.id)
         db.add(project)
         db.commit()
     
     file_bytes = await file.read()
     
-    # Upload to Supabase Storage
+    # 1. Fast Synchronous Validation (< 30ms) - Fails immediately if file is corrupt/unreadable
+    try:
+        validate_file_integrity(file_bytes, file.content_type or "application/octet-stream")
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+    
+    # 2. Fast Upload to Supabase Storage
     try:
         supabase = get_supabase()
         file_path = f"{project_id}/{uuid.uuid4()}_{file.filename}"
@@ -74,17 +131,15 @@ async def upload_document(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload to storage: {str(e)}")
 
-    # Parse document
-    extracted_text = extract_text_and_tables(file_bytes, file.content_type or "application/octet-stream")
-    
-    # Save to database
+    # 3. Save initial document to database with 'processing' status
     document = Document(
         project_id=project.id,
         user_id=current_user.id,
         file_name=file.filename,
         file_path=file_path,
         file_type=file.content_type,
-        raw_text=extracted_text
+        raw_text="",
+        status="processing"
     )
     db.add(document)
     db.flush() # Populate document.id immediately
@@ -118,16 +173,26 @@ async def upload_document(
             "spend": "$0",
             "risk": "low"
         })
-        # SQLAlchemy JSON mutations might need to be explicitly flagged or re-assigned
         result.structured_proposal = {"vendors": vendors}  # type: ignore[assignment]
+        clear_analysis_result(result)
         
     db.commit()
     db.refresh(document)
     
+    # 4. Dispatch pdfplumber extraction to background thread
+    background_tasks.add_task(
+        process_document_background,
+        str(document.id),
+        file_bytes,
+        file.content_type or "application/octet-stream"
+    )
+    
+    # 5. Return HTTP response immediately (< 100ms)
     return {
         "id": str(document.id),
         "file_name": document.file_name,
-        "vendor_name": vendor_name
+        "vendor_name": vendor_name,
+        "status": "processing"
     }
 
 # Dummy status storage for simplicity in this phase
@@ -157,17 +222,39 @@ def list_documents(project_id: str, current_user: User = Depends(get_current_use
             if "id" in v:
                 vendor_map[v["id"]] = v.get("name", "Unknown")
                 
-    return [
-        {
+    formatted_docs = []
+    for d in docs:
+        raw_status = getattr(d, "status", None)
+        has_text = bool(d.raw_text and len(d.raw_text.strip()) > 10)
+        
+        if not raw_status:
+            raw_status = "ready" if has_text else "failed"
+            
+        display_status = "Active"
+        if raw_status == "processing":
+            display_status = "Processing"
+        elif raw_status == "failed" or not has_text:
+            display_status = "Failed"
+            raw_status = "failed"
+            
+        v_name = vendor_map.get(str(d.id))
+        if not v_name or v_name == "Pending Extraction...":
+            if raw_status == "processing":
+                v_name = "Pending Extraction..."
+            else:
+                v_name = d.file_name.rsplit('.', 1)[0].replace('_', ' ')
+
+        formatted_docs.append({
             "id": str(d.id),
-            "vendor": vendor_map.get(str(d.id), "Pending Extraction..."),  # type: ignore[arg-type]
+            "vendor": v_name,
             "name": d.file_name,
             "type": d.file_type or "Unknown",
             "date": d.created_at.strftime("%Y-%m-%d"),
-            "status": "Active"
-        }
-        for d in docs
-    ]
+            "status": display_status,
+            "raw_status": raw_status
+        })
+        
+    return formatted_docs
 @app.delete("/projects/{project_id}/documents/{document_id}")
 def delete_document(project_id: str, document_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     doc = db.query(models.Document).filter_by(id=document_id, project_id=project_id, user_id=current_user.id).first()
@@ -187,6 +274,7 @@ def delete_document(project_id: str, document_id: str, current_user: User = Depe
         vendors = result.structured_proposal["vendors"]
         updated_vendors = [v for v in vendors if v.get("id") != document_id]
         result.structured_proposal = {"vendors": updated_vendors}  # type: ignore[assignment]
+        clear_analysis_result(result)
         
     db.delete(doc)
     db.commit()
@@ -213,6 +301,7 @@ def delete_vendor(project_id: str, vendor_name: str, current_user: User = Depend
         vendors = result.structured_proposal["vendors"]
         updated_vendors = [v for v in vendors if v.get("name") != vendor_name]
         result.structured_proposal = {"vendors": updated_vendors}  # type: ignore[assignment]
+        clear_analysis_result(result)
         db.commit()
     return {"status": "deleted"}
 
@@ -245,63 +334,92 @@ def set_policy_rules(project_id: str, rules: list, current_user: User = Depends(
 
 import asyncio
 
+PIPELINE_STEPS = [
+    "Document Parsing",
+    "Information Extraction",
+    "Cost Analysis",
+    "Saving Results"
+]
+
+def _advance_step(project_id: str, step_name: str):
+    ps = pipeline_status[project_id]
+    ps["current_step"] = step_name
+    for s in ps["steps"]:
+        if s["name"] == step_name:
+            s["status"] = "running"
+
+def _done_step(project_id: str, step_name: str):
+    for s in pipeline_status[project_id]["steps"]:
+        if s["name"] == step_name:
+            s["status"] = "done"
+
 @app.post("/projects/{project_id}/run")
 async def run_pipeline(project_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Start a background task for the pipeline
     pipeline_status[project_id] = {
         "status": "running",
         "current_step": "Document Parsing",
-        "steps": [
-            {"name": "Document Parsing", "status": "pending"},
-            {"name": "Information Extraction", "status": "pending"},
-            {"name": "Cost Analysis", "status": "pending"},
-            {"name": "Risk Assessment", "status": "pending"},
-            {"name": "Feature Comparison", "status": "pending"},
-            {"name": "Compliance Validation", "status": "pending"},
-            {"name": "Vendor Scoring", "status": "pending"},
-            {"name": "Timeline Analysis", "status": "pending"},
-            {"name": "Insight Detection", "status": "pending"},
-            {"name": "Red-Team Review", "status": "pending"},
-            {"name": "Executive Summary", "status": "pending"}
-        ]
+        "steps": [{"name": n, "status": "pending"} for n in PIPELINE_STEPS]
     }
     
     async def mock_pipeline():
-        for step in pipeline_status[project_id]["steps"]:
-            step["status"] = "running"
-            pipeline_status[project_id]["current_step"] = step["name"]
-            
-            if step["name"] == "Information Extraction":
-                # Build the FAISS index during extraction
-                session = SessionLocal()
-                try:
-                    db_docs = session.query(models.Document).filter_by(project_id=project_id).all()
-                    if db_docs:
-                        agent.build_project_index(project_id, db_docs)
-                except Exception as e:
-                    print("Error building index:", e)
-                finally:
-                    session.close()
-
-            await asyncio.sleep(2) # Simulate processing time
-            step["status"] = "done"
-            
-        pipeline_status[project_id]["status"] = "completed"
-        
-        # Save mock results to DB
         session = SessionLocal()
         try:
+            # --- Step 1: Wait for background extractions (up to 60s) ---
+            _advance_step(project_id, "Document Parsing")
+            for _ in range(60):
+                pending = session.query(models.Document).filter_by(
+                    project_id=project_id, status="processing"
+                ).count()
+                if pending == 0:
+                    break
+                session.close()
+                await asyncio.sleep(1)
+                session = SessionLocal()
+            _done_step(project_id, "Document Parsing")
+
+            # --- Fail-fast: validate API key before starting LLM work ---
+            _advance_step(project_id, "Information Extraction")
+            try:
+                llm = agent.get_llm()
+                await asyncio.wait_for(
+                    llm.ainvoke("respond with only the word OK"),
+                    timeout=10
+                )
+            except Exception as e:
+                pipeline_status[project_id]["status"] = "error"
+                pipeline_status[project_id]["error"] = (
+                    f"API key validation failed. Check your DEEPINFRA_API_KEY or OPENAI_API_KEY. "
+                    f"Details: {str(e)}"
+                )
+                return
+
             db_docs = session.query(models.Document).filter_by(project_id=project_id).all()
-            analysis = await agent.analyze_all_documents(db_docs)
-            
-            # Extract feature snapshots for all vendors
+            try:
+                def progress_cb(msg: str):
+                    pipeline_status[project_id]["current_sub_step"] = msg
+
+                analysis = await asyncio.wait_for(
+                    agent.analyze_all_documents(db_docs, progress_cb=progress_cb),
+                    timeout=300  # 5-minute hard cap — prevents infinite hang
+                )
+            except asyncio.TimeoutError:
+                pipeline_status[project_id]["status"] = "error"
+                pipeline_status[project_id]["error"] = (
+                    "Analysis timed out after 5 minutes. The LLM API may be slow or unresponsive. "
+                    "Please try again in a moment."
+                )
+                return
+            pipeline_status[project_id]["current_sub_step"] = ""
+            _done_step(project_id, "Information Extraction")
+
+            # --- Step 3: Feature extraction per vendor ---
+            _advance_step(project_id, "Cost Analysis")
             feature_snapshot = {}
             for v in analysis.get("structured_proposal", {}).get("vendors", []):
                 doc = next((d for d in db_docs if str(d.id) == v.get("id")), None)
                 raw_text = doc.raw_text if doc else ""
-                
+
                 v_costs = [c for c in analysis.get("cost_breakdown", {}).get("items", []) if c.get("vendor") == v.get("name")]
-                
                 v_risks_items = [r for r in analysis.get("risk_flags", {}).get("items", []) if r.get("vendor") == v.get("name")]
                 v_risk_data = {}
                 if v_risks_items:
@@ -311,9 +429,9 @@ async def run_pipeline(project_id: str, current_user: User = Depends(get_current
                         "securityRisk": first_r.get("securityRisk", "low"),
                         "operationalRisk": first_r.get("operationalRisk", "low")
                     }
-                
+
                 v_compliance = [c for c in analysis.get("policy_rules", {}).get("items", []) if c.get("vendor") == v.get("name")]
-                
+
                 v_sla = []
                 if "sla_metrics" in analysis:
                     v_sla = [s for s in analysis["sla_metrics"].get("items", []) if s.get("vendor") == v.get("name")]
@@ -329,13 +447,15 @@ async def run_pipeline(project_id: str, current_user: User = Depends(get_current
                     raw_text=str(raw_text)
                 )
                 feature_snapshot[v.get("id")] = v_features
-                
+            _done_step(project_id, "Cost Analysis")
+
+            # --- Step 4: Save results to DB ---
+            _advance_step(project_id, "Saving Results")
             score_results = analysis["score_results"]
-            
             result = session.query(models.Result).filter_by(project_id=project_id).first()
             if not result:
                 result = models.Result(
-                    project_id=project_id, 
+                    project_id=project_id,
                     user_id=current_user.id,
                     structured_proposal=analysis["structured_proposal"],
                     cost_breakdown=analysis["cost_breakdown"],
@@ -351,24 +471,29 @@ async def run_pipeline(project_id: str, current_user: User = Depends(get_current
                 )
                 session.add(result)
             else:
-                result.structured_proposal = analysis["structured_proposal"]  # type: ignore[assignment]
-                result.cost_breakdown = analysis["cost_breakdown"]  # type: ignore[assignment]
-                result.risk_flags = analysis["risk_flags"]  # type: ignore[assignment]
-                result.policy_rules = analysis["policy_rules"]  # type: ignore[assignment]
-                result.score_results = score_results  # type: ignore[assignment]
-                result.plain_language = analysis.get("plain_language", {})  # type: ignore[assignment]
-                result.timeline_events = analysis.get("timeline_events", [])  # type: ignore[assignment]
-                result.recommendation = analysis.get("recommendation", {})  # type: ignore[assignment]
-                result.insight = analysis.get("insight", {})  # type: ignore[assignment]
-                result.red_team = analysis.get("red_team", {})  # type: ignore[assignment]
-                result.feature_snapshot = feature_snapshot  # type: ignore[assignment]
+                result.structured_proposal = analysis["structured_proposal"]
+                result.cost_breakdown = analysis["cost_breakdown"]
+                result.risk_flags = analysis["risk_flags"]
+                result.policy_rules = analysis["policy_rules"]
+                result.score_results = score_results
+                result.plain_language = analysis.get("plain_language", {})
+                result.timeline_events = analysis.get("timeline_events", [])
+                result.recommendation = analysis.get("recommendation", {})
+                result.insight = analysis.get("insight", {})
+                result.red_team = analysis.get("red_team", {})
+                result.feature_snapshot = feature_snapshot
             session.commit()
+            _done_step(project_id, "Saving Results")
+            pipeline_status[project_id]["status"] = "completed"
+
         except Exception as e:
-            print("Error saving analysis results:", e)
+            print("Pipeline error:", e)
+            pipeline_status[project_id]["status"] = "error"
+            pipeline_status[project_id]["error"] = str(e)
             session.rollback()
         finally:
             session.close()
-            
+
     asyncio.create_task(mock_pipeline())
     return {"status": "started"}
  

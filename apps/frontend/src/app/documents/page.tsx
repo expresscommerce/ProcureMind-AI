@@ -23,7 +23,27 @@ export default function VendorDocumentsPage() {
 
   useEffect(() => {
     fetchDocuments();
+
+    const handleRefresh = () => fetchDocuments();
+    window.addEventListener("refresh-results", handleRefresh);
+
+    return () => {
+      window.removeEventListener("refresh-results", handleRefresh);
+    };
   }, [currentProject?.id]);
+
+  useEffect(() => {
+    const hasProcessing = documents.some(
+      (doc) => doc.status === "Processing" || doc.raw_status === "processing"
+    );
+    if (!hasProcessing) return;
+
+    const timer = setInterval(() => {
+      fetchDocuments();
+    }, 2000);
+
+    return () => clearInterval(timer);
+  }, [documents, currentProject?.id]);
 
   const handleDelete = async (docId: string) => {
     if (!currentProject) return;
@@ -73,9 +93,17 @@ export default function VendorDocumentsPage() {
                 <TableCell className="font-mono tabular-nums">{row.date}</TableCell>
                 <TableCell>
                   {row.status === "Active" ? (
-                    <span className="text-verdigris font-medium text-sm">{row.status}</span>
+                    <span className="text-verdigris font-medium text-sm flex items-center gap-1">
+                      <span>✓</span> Active
+                    </span>
+                  ) : row.status === "Processing" ? (
+                    <span className="text-amber-600 font-medium text-sm animate-pulse flex items-center gap-1">
+                      <span className="inline-block animate-spin">⏳</span> Processing...
+                    </span>
                   ) : (
-                    <span className="text-risk-medium font-medium text-sm">{row.status}</span>
+                    <span className="text-audit-red font-medium text-sm flex items-center gap-1">
+                      <span>✕</span> Failed
+                    </span>
                   )}
                 </TableCell>
                 <TableCell className="text-right space-x-2">

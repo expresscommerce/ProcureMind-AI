@@ -24,7 +24,7 @@ export default function OverviewPage() {
         const vendorsAtRisk = results?.risk_flags?.items?.filter((i: any) => i.financialRisk === "high" || i.securityRisk === "high")?.length ?? 0;
         const plainLang = results?.plain_language || {};
 
-        // Transform items to alerts for the table
+        // Transform item to alerts for the table
         const alerts: any[] = [];
         if (results?.cost_breakdown?.items) {
           alerts.push(...results.cost_breakdown.items.filter((i: any) => i.hasDiscrepancy).map((i: any) => ({

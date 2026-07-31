@@ -103,7 +103,7 @@ async def upload_document(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Verify project exists and user has access
+    # Verify if the project exists and user has access
     project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not project:
         # Create it if it doesn't exist just for the sake of the API flow

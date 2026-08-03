@@ -50,7 +50,6 @@ export default function OverviewPage() {
                     : "High-level summary of vendor costs, risks, and compliance status."}
                 </p>
               </div>
-              <PipelineRunner />
             </div>
 
             {/* Insight callout — top of Overview */}

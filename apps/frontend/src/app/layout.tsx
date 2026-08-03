@@ -6,6 +6,7 @@ import { AuthProvider } from "@/components/AuthProvider";
 import { AppLayout } from "@/components/AppLayout";
 import { ProjectProvider } from "@/lib/project";
 import { ViewModeProvider } from "@/lib/viewMode";
+import { QueryProvider } from "@/components/QueryProvider";
 
 const sourceSerif = Source_Serif_4({ 
   subsets: ['latin'], 
@@ -46,13 +47,15 @@ export default function RootLayout({
         )}
       >
         <AuthProvider>
-          <ViewModeProvider>
-            <ProjectProvider>
-              <AppLayout>
-                {children}
-              </AppLayout>
-            </ProjectProvider>
-          </ViewModeProvider>
+          <QueryProvider>
+            <ViewModeProvider>
+              <ProjectProvider>
+                  <AppLayout>
+                    {children}
+                  </AppLayout>
+              </ProjectProvider>
+            </ViewModeProvider>
+          </QueryProvider>
         </AuthProvider>
       </body>
     </html>

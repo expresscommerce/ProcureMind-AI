@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ComparisonTable, ComparisonFeature, ComparisonVendor } from "@/components/ComparisonTable";
@@ -8,12 +9,20 @@ import { ResultsWrapper } from "@/components/ResultsWrapper";
 import { ContractTimeline } from "@/components/ContractTimeline";
 import { useViewMode } from "@/lib/viewMode";
 import { GlossaryTerm } from "@/components/GlossaryTerm";
+import { PipelineRunner } from "@/components/PipelineRunner";
+import { CSVLink } from "react-csv";
 
 type Tab = "matrix" | "timeline";
 
 export default function ComparisonMatrixPage() {
   const [activeTab, setActiveTab] = useState<Tab>("matrix");
   const { mode } = useViewMode();
+
+  const data = [
+    { name: "Vendor 1", "Annual Cost": "$10,000", "Data Retention": "5 years", "SLA Uptime": "99.9%", "Compliance Risk": "low", "SSO Support": "Yes" },
+    { name: "Vendor 2", "Annual Cost": "$15,000", "Data Retention": "10 years", "SLA Uptime": "99.5%", "Compliance Risk": "medium", "SSO Support": "Yes" },
+    { name: "Vendor 3", "Annual Cost": "$20,000", "Data Retention": "15 years", "SLA Uptime": "99.0%", "Compliance Risk": "high", "SSO Support": "No" }
+  ]
 
   return (
     <ResultsWrapper>
@@ -42,6 +51,25 @@ export default function ComparisonMatrixPage() {
           }
         }));
 
+        const data = resultVendors.map((v: any) => ({
+          Name: v.name,
+          Subtitle: v.category || "",
+          "Annual Cost": v.annualCost || "-",
+          "Data Retention": v.dataRetention || "-",
+          "SLA Uptime": v.slaUptime || "-",
+          "Compliance Risk": v.complianceRisk || "low",
+          "SSO Support": v.ssoSupport || "-",
+        }));
+        
+        const isDisabled = VENDORS.length === 0;
+
+        const handleCsvClick = (event: React.MouseEvent<HTMLAnchorElement>) => {
+          if (isDisabled) {
+            event.preventDefault();
+            return false;
+          }
+        }
+
         const timelineData = results?.timeline_events || [];
 
         return (
@@ -59,7 +87,10 @@ export default function ComparisonMatrixPage() {
               </div>
               <div className="flex gap-3">
                 <DocumentUploader variant="secondary" label="Add Vendor" />
-                <Button disabled title="Exporting is coming in Phase 4">Export Matrix</Button>
+                <PipelineRunner />
+                <CSVLink onClick={handleCsvClick} data={data} filename="comparison_matrix.csv">
+                  <Button disabled={isDisabled} >Export Matrix</Button>
+                </CSVLink>
               </div>
             </div>
 

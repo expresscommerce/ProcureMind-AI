@@ -40,7 +40,13 @@ export function DocumentUploader({ label = "Upload Proposal", variant = "default
       setVendorName("");
       setSelectedFile(null);
       // Dispatch refresh event to update vendor directory & documents
-      window.dispatchEvent(new CustomEvent("refresh-results"));
+      console.log("Dispatching");
+
+      console.log(
+        window.dispatchEvent(new CustomEvent("refresh-results"))
+      );
+
+      console.log("Done");
     } catch (err: any) {
       alert(`Upload failed: ${err.message}`);
     } finally {

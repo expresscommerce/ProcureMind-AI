@@ -4,6 +4,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { Sidebar } from "@/components/Sidebar";
 import { useProject } from "@/lib/project";
 import { useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "./ui/button";
 import { AskDrawer } from "./AskDrawer";
 import { TourProvider } from "./TourProvider";
@@ -11,6 +12,7 @@ import { TourProvider } from "./TourProvider";
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { session, isLoading: authLoading } = useAuth();
   const { currentProject, loading: projectLoading, createProject } = useProject();
+  const queryClient = useQueryClient();
   const [newProjectName, setNewProjectName] = useState("");
   const [creating, setCreating] = useState(false);
   const [isAskDrawerOpen, setIsAskDrawerOpen] = useState(false);
@@ -20,6 +22,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     window.addEventListener("open-ask-drawer", handleOpenAskDrawer);
     return () => window.removeEventListener("open-ask-drawer", handleOpenAskDrawer);
   }, []);
+
+  useEffect(() => {
+    const refreshResults = () => {
+      queryClient.invalidateQueries({
+        queryKey: ["results", currentProject?.id],
+      });
+    };
+    window.addEventListener("refresh-results", refreshResults);
+    return () => window.removeEventListener("refresh-results", refreshResults);
+  }, [currentProject, queryClient]);
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();

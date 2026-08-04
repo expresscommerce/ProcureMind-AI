@@ -51,7 +51,9 @@ export function PipelineRunner() {
           }
         } else if (data.status === "completed" && wasRunningRef.current) {
           wasRunningRef.current = false;
+          console.log("Dispatching refresh-results event for pipeline completion");
           window.dispatchEvent(new CustomEvent("refresh-results"));
+          console.log("Event dispatched");
           // Stop fast polling once completed
           if (intervalId) { clearInterval(intervalId); intervalId = null; }
         } else if (data.status === "not_started" && wasRunningRef.current) {
@@ -82,6 +84,7 @@ export function PipelineRunner() {
   }, [currentProject]);
 
   const [isProcessingDocs, setIsProcessingDocs] = useState(false);
+  const [hasDocs, setHasDocs] = useState(false);
   const docsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -90,6 +93,7 @@ export function PipelineRunner() {
     const checkDocs = async () => {
       try {
         const docs = await apiFetch(`/projects/${currentProject.id}/documents`);
+        setHasDocs(docs.length > 0);
         const processing = docs.some(
           (d: any) => d.status === "Processing" || d.raw_status === "processing"
         );
@@ -115,6 +119,7 @@ export function PipelineRunner() {
         docsIntervalRef.current = setInterval(checkDocs, 1000);
       }
     };
+    
     window.addEventListener("refresh-results", handleRefresh);
 
     return () => {
@@ -150,7 +155,7 @@ export function PipelineRunner() {
     <div className="flex flex-col items-end gap-2">
       <Button 
         onClick={handleRun} 
-        disabled={loading || status.status === "running" || isProcessingDocs}
+        disabled={loading || status.status === "running" || isProcessingDocs || !hasDocs}
         title={isProcessingDocs ? "Please wait for all documents to finish extraction" : ""}
       >
         {status.status === "running" 

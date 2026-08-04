@@ -71,7 +71,9 @@ export function WeightSimulator({ recommendation }: WeightSimulatorProps) {
         body: JSON.stringify(weights),
       });
       await apiFetch(`/projects/${currentProject.id}/run`, { method: "POST" });
+      console.log("Dispatching refresh-results event in weight simulator");
       window.dispatchEvent(new CustomEvent("refresh-results"));
+      console.log("Event dispatched");
     } catch (e: unknown) {
       alert(`Failed to save: ${e instanceof Error ? e.message : String(e)}`);
     } finally {

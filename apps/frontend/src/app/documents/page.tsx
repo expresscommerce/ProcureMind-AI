@@ -1,5 +1,7 @@
 "use client";
 
+import { supabase } from "@/lib/supabase";
+
 import { useEffect, useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -53,12 +55,37 @@ export default function VendorDocumentsPage() {
         method: "DELETE"
       });
       fetchDocuments();
+      console.log("Dispatching refresh-results event in document deletion ");
+      window.dispatchEvent(new CustomEvent("refresh-results"));
+      console.log("Event dispatched");
     } catch (err) {
       alert("Failed to delete document");
     }
   };
 
+  const handleView = async (docId: string) => {
+    if (!currentProject) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("No active session");
+
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await fetch(`${API_URL}/projects/${currentProject.id}/documents/${docId}/download`, {
+        headers: { "Authorization": `Bearer ${session.access_token}` }
+      });
+      if (!res.ok) throw new Error("Failed to load document");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+    } catch (err) {
+      console.error(err);
+      alert("Error loading document");
+    }
+  }
+
   return (
+
     <div className="space-y-8">
       <div className="flex items-start justify-between">
         <div>
@@ -111,7 +138,7 @@ export default function VendorDocumentsPage() {
                     variant="ghost" 
                     size="sm" 
                     className="text-navy font-medium"
-                    onClick={() => window.open(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/projects/${currentProject?.id}/documents/${row.id}/download`, "_blank")}
+                    onClick={() => handleView(row.id)}
                   >
                     View
                   </Button>

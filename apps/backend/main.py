@@ -139,7 +139,8 @@ async def upload_document(
         file_path=file_path,
         file_type=file.content_type,
         raw_text="",
-        status="processing"
+        status="processing",
+        vendor_name=vendor_name
     )
     db.add(document)
     db.flush() # Populate document.id immediately
@@ -237,7 +238,11 @@ def list_documents(project_id: str, current_user: User = Depends(get_current_use
             display_status = "Failed"
             raw_status = "failed"
             
-        v_name = vendor_map.get(str(d.id))
+        if getattr(d, "vendor_name", None):
+            v_name = d.vendor_name
+        else:
+            v_name = vendor_map.get(str(d.id)) or (d.file_name.rsplit('.',1)[0].replace('_',' '))
+
         if not v_name or v_name == "Pending Extraction...":
             if raw_status == "processing":
                 v_name = "Pending Extraction..."
@@ -453,11 +458,37 @@ async def run_pipeline(project_id: str, current_user: User = Depends(get_current
             _advance_step(project_id, "Saving Results")
             score_results = analysis["score_results"]
             result = session.query(models.Result).filter_by(project_id=project_id).first()
+
+            # Preserve user-entered vendor names by ID when writing fresh analysis output.
+            preserved_name_by_id = {}
+            for d in db_docs:
+                if d.vendor_name and d.vendor_name.strip():
+                    preserved_name_by_id[str(d.id)] = d.vendor_name.strip()
+
+            if result and result.structured_proposal and "vendors" in result.structured_proposal:
+                for existing_vendor in result.structured_proposal["vendors"]:
+                    existing_id = existing_vendor.get("id")
+                    existing_name = existing_vendor.get("name")
+                    if existing_id and existing_name and existing_id not in preserved_name_by_id:
+                        preserved_name_by_id[existing_id] = existing_name
+
+            merged_structured_proposal = dict(analysis.get("structured_proposal") or {})
+            merged_vendors = []
+            for analyzed_vendor in merged_structured_proposal.get("vendors", []):
+                merged_vendor = dict(analyzed_vendor)
+                vendor_id = merged_vendor.get("id")
+                if vendor_id is not None:
+                    preserved_name = preserved_name_by_id.get(str(vendor_id))
+                    if preserved_name:
+                        merged_vendor["name"] = preserved_name
+                merged_vendors.append(merged_vendor)
+            merged_structured_proposal["vendors"] = merged_vendors
+
             if not result:
                 result = models.Result(
                     project_id=project_id,
                     user_id=current_user.id,
-                    structured_proposal=analysis["structured_proposal"],
+                    structured_proposal=merged_structured_proposal,
                     cost_breakdown=analysis["cost_breakdown"],
                     risk_flags=analysis["risk_flags"],
                     policy_rules=analysis["policy_rules"],
@@ -471,7 +502,7 @@ async def run_pipeline(project_id: str, current_user: User = Depends(get_current
                 )
                 session.add(result)
             else:
-                result.structured_proposal = analysis["structured_proposal"]
+                result.structured_proposal = merged_structured_proposal
                 result.cost_breakdown = analysis["cost_breakdown"]
                 result.risk_flags = analysis["risk_flags"]
                 result.policy_rules = analysis["policy_rules"]

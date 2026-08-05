@@ -87,16 +87,18 @@ export default function VendorDocumentsPage() {
   return (
 
     <div className="space-y-8">
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
           <h1 className="font-serif text-3xl font-semibold text-ink mb-2">Vendor Documents</h1>
           <p className="text-ink-muted">Centralized repository for all vendor contracts, DPAs, and order forms.</p>
         </div>
-        <DocumentUploader label="Upload Document" />
+        <div className="shrink-0">
+          <DocumentUploader label="Upload Document" />
+        </div>
       </div>
 
       <div className="border border-rule rounded-md overflow-hidden bg-surface">
-        <Table>
+        <Table className="min-w-[720px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[20%]">Vendor</TableHead>

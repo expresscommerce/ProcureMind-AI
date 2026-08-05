@@ -93,7 +93,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               {creating ? "Creating..." : "Create Project"}
             </Button>
           </form>
-        </div>
+        </div> Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+12:56  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+13:59  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+…
+Click to expand
+All 12 errors are pre-existing (unused table imports, any types) — none from my changes. Changes to outcomes/page.tsx:
+1. 
+2. 
+The page was otherwise already responsive (the vendor-selector + form grid is grid-cols-1 md:grid-cols-3, and inputs are width-constrained).
+▣  Build · Big Pickle · 37.4s
       </div>
     );
   }

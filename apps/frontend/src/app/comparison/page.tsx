@@ -74,7 +74,7 @@ export default function ComparisonMatrixPage() {
 
         return (
           <div className="space-y-8">
-            <div className="flex items-start justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div>
                 <h1 className="font-serif text-3xl font-semibold text-ink mb-2">
                   {mode === "simple" ? "Side-by-Side Comparison" : "Comparison Matrix"}
@@ -85,7 +85,7 @@ export default function ComparisonMatrixPage() {
                     : "Compare vendors side-by-side to evaluate alternative options."}
                 </p>
               </div>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3 shrink-0">
                 <DocumentUploader variant="secondary" label="Add Vendor" />
                 <PipelineRunner />
                 <CSVLink onClick={handleCsvClick} data={data} filename="comparison_matrix.csv">

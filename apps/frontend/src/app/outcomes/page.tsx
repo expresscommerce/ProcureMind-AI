@@ -203,7 +203,7 @@ export default function LogOutcomePage() {
                   <label className="block text-sm font-medium text-ink">
                     Was the service/contract delivered on time?
                   </label>
-                  <div className="flex gap-4">
+                  <div className="flex flex-wrap gap-x-4 gap-y-2">
                     {[
                       { label: "Yes, On Time", value: true },
                       { label: "No, Delayed", value: false },
@@ -242,7 +242,7 @@ export default function LogOutcomePage() {
                   <label className="block text-sm font-medium text-ink">
                     Did any unexpected or hidden costs materialize during implementation?
                   </label>
-                  <div className="flex gap-4">
+                  <div className="flex flex-wrap gap-x-4 gap-y-2">
                     {[
                       { label: "Yes, Materialized", value: true },
                       { label: "No, Match Budget", value: false },
@@ -282,7 +282,7 @@ export default function LogOutcomePage() {
                   <label className="block text-sm font-medium text-ink">
                     Overall Satisfaction Score (1 - 5)
                   </label>
-                  <div className="flex gap-4">
+                  <div className="flex flex-wrap gap-x-4 gap-y-2">
                     {[1, 2, 3, 4, 5].map((val) => (
                       <label key={val} className="flex items-center gap-2 text-sm text-ink cursor-pointer">
                         <input
@@ -314,7 +314,7 @@ export default function LogOutcomePage() {
                 </div>
 
                 <div className="pt-4 border-t border-rule flex justify-end">
-                  <Button type="submit" disabled={loading} className="w-40">
+                  <Button type="submit" disabled={loading} className="w-full sm:w-40">
                     {loading ? "Saving..." : "Log Outcome"}
                   </Button>
                 </div>

@@ -22,7 +22,7 @@ export default function CompliancePage() {
 
         return (
           <div className="space-y-8">
-            <div className="flex items-start justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div>
                 <h1 className="font-serif text-3xl font-semibold text-ink mb-2">
                   {mode === "simple" ? "Compliance Check" : "Compliance & Audit Trail"}
@@ -33,7 +33,9 @@ export default function CompliancePage() {
                     : "Track regulatory frameworks and missing compliance documentation."}
                 </p>
               </div>
-              <Button onClick={() => alert("Documentation request sent (simulated)")}>Request Documentation</Button>
+              <div className="shrink-0">
+                <Button onClick={() => alert("Documentation request sent (simulated)")}>Request Documentation</Button>
+              </div>
             </div>
 
             {mode === "simple" && COMPLIANCE_DATA.length > 0 && (
@@ -43,7 +45,7 @@ export default function CompliancePage() {
             )}
 
             <div className="border border-rule rounded-md overflow-hidden bg-surface">
-              <Table>
+              <Table className="min-w-[720px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[20%]">Vendor</TableHead>
@@ -121,7 +123,7 @@ export default function CompliancePage() {
                 title="Compliance Details"
               >
                 <div className="space-y-4 text-sm">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <span className="text-ink-muted block text-xs font-semibold uppercase tracking-wider">Vendor</span>
                       <span className="text-ink font-medium text-base">{selectedCompliance.vendor}</span>

@@ -35,7 +35,7 @@ export function AskDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-y-0 right-0 w-[400px] bg-surface border-l border-rule shadow-lg z-50 flex flex-col animate-in slide-in-from-right duration-300">
+    <div className="fixed inset-y-0 right-0 w-full max-w-[400px] bg-surface border-l border-rule shadow-lg z-50 flex flex-col animate-in slide-in-from-right duration-300">
       <div className="p-6 border-b border-rule flex items-center justify-between">
         <h2 className="font-serif text-xl font-semibold text-ink">Ask a Question</h2>
         <button onClick={onClose} className="text-ink-muted hover:text-ink">

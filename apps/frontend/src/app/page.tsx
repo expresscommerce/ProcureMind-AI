@@ -91,7 +91,7 @@ export default function OverviewPage() {
                 {mode === "simple" ? "Things to Address" : "Action Required"}
               </h2>
               <div className="border border-rule rounded-md overflow-hidden">
-                <Table>
+                <Table className="min-w-[640px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[30%]">Vendor</TableHead>

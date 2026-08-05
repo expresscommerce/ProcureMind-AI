@@ -152,7 +152,7 @@ export function PipelineRunner() {
   if (!currentProject) return null;
 
   return (
-    <div className="flex flex-col items-end gap-2">
+    <div className="flex flex-col items-end gap-2 relative">
       <Button 
         onClick={handleRun} 
         disabled={loading || status.status === "running" || isProcessingDocs || !hasDocs}
@@ -166,14 +166,14 @@ export function PipelineRunner() {
       </Button>
       
       {status.status === "error" && status.error && (
-        <div className="text-sm bg-red-50 border border-red-300 p-3 rounded-md shadow-sm mt-2 w-80 absolute top-20 right-8 z-10">
+        <div className="text-sm bg-red-50 border border-red-300 p-3 rounded-md shadow-sm mt-2 w-80 max-w-[calc(100vw-2rem)] absolute top-full right-0 z-10">
           <div className="font-medium text-red-700 mb-1">Pipeline Error</div>
           <div className="text-xs text-red-600 break-words">{status.error}</div>
         </div>
       )}
       
       {status.status === "running" && status.steps.length > 0 && (
-        <div className="text-sm bg-surface border border-rule p-3 rounded-md shadow-sm mt-2 w-72 absolute top-20 right-8 z-10">
+        <div className="text-sm bg-surface border border-rule p-3 rounded-md shadow-sm mt-2 w-72 max-w-[calc(100vw-2rem)] absolute top-full right-0 z-10">
           <div className="font-medium text-ink mb-2">Pipeline Progress</div>
           <div className="space-y-1">
             {status.steps.map((step, idx) => (

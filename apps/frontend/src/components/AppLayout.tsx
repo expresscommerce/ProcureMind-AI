@@ -123,7 +123,7 @@ The page was otherwise already responsive (the vendor-selector + form grid is gr
       )}
       <TourProvider />
       <main className="ml-0 pt-16 md:pt-0 md:pl-[240px] flex-1 min-w-0">
-        <div className="max-w-[1280px] mx-auto p-8 animate-in fade-in duration-500">
+        <div className="max-w-[1280px] mx-auto p-4 sm:p-8 animate-in fade-in duration-500">
           {children}
         </div>
       </main>

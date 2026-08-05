@@ -69,7 +69,7 @@ export function DocumentUploader({ label = "Upload Proposal", variant = "default
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 backdrop-blur-sm">
-          <div className="bg-surface border border-rule rounded-md p-6 w-[400px] shadow-lg">
+          <div className="bg-surface border border-rule rounded-md p-6 w-[400px] max-w-[90vw] shadow-lg">
             <h2 className="font-serif text-2xl text-ink font-semibold mb-4">Add Vendor Document</h2>
             
             <div className="space-y-4 mb-6">

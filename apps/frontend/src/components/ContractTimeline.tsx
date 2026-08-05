@@ -64,7 +64,7 @@ export function ContractTimeline({ timelineData }: ContractTimelineProps) {
     <div className="space-y-8">
       {timelineData.map((vendor) => (
         <div key={vendor.vendor_name} className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-serif text-lg font-semibold text-ink">
               {vendor.vendor_name}
             </h3>
@@ -77,6 +77,8 @@ export function ContractTimeline({ timelineData }: ContractTimelineProps) {
 
           {/* Timeline bar */}
           <div className="relative">
+            <div className="overflow-x-auto">
+            <div className="min-w-[480px] relative">
             {/* Main timeline line */}
             <div className="h-px bg-navy w-full relative">
               {/* Start and end markers */}
@@ -92,7 +94,6 @@ export function ContractTimeline({ timelineData }: ContractTimelineProps) {
                 );
                 const eventId = `${vendor.vendor_name}-${i}`;
                 const isExpanded = expandedEvent === eventId;
-
                 return (
                   <div
                     key={i}
@@ -120,7 +121,7 @@ export function ContractTimeline({ timelineData }: ContractTimelineProps) {
 
                     {/* Expanded card */}
                     {isExpanded && (
-                      <div className="absolute top-8 left-1/2 -translate-x-1/2 w-72 bg-surface border border-rule rounded-md shadow-md p-3 z-20 animate-in fade-in duration-150">
+                      <div className="absolute top-8 left-1/2 -translate-x-1/2 w-72 max-w-[calc(100vw-2rem)] bg-surface border border-rule rounded-md shadow-md p-3 z-20 animate-in fade-in duration-150">
                         <div className="flex items-center justify-between mb-1.5">
                           <span
                             className={`text-xs font-semibold uppercase tracking-wider ${
@@ -151,7 +152,9 @@ export function ContractTimeline({ timelineData }: ContractTimelineProps) {
             </div>
 
             {/* Spacer for date labels */}
-            <div className="h-8" />
+            <div className={expandedEvent?.startsWith(`${vendor.vendor_name}-`) ? "h-56" : "h-8"} />
+            </div>
+            </div>
           </div>
 
           {/* Legend */}

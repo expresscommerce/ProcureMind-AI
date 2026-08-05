@@ -88,9 +88,9 @@ export function WeightSimulator({ recommendation }: WeightSimulatorProps) {
   return (
     <Card>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <CardTitle className="text-base">Adjust Scoring Weights</CardTitle>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {hasChanges && (
               <Button variant="secondary" size="sm" onClick={handleReset}>
                 Reset
@@ -114,7 +114,7 @@ export function WeightSimulator({ recommendation }: WeightSimulatorProps) {
           {(Object.keys(CRITERIA_LABELS) as (keyof ScoringWeights)[]).map(
             (key) => (
               <div key={key} className="flex items-center gap-3">
-                <span className="w-20 text-sm font-medium text-ink">
+                <span className="w-16 sm:w-20 shrink-0 text-sm font-medium text-ink">
                   {CRITERIA_LABELS[key]}
                 </span>
                 <input
@@ -141,7 +141,7 @@ export function WeightSimulator({ recommendation }: WeightSimulatorProps) {
         </div>
 
         {/* Rankings Comparison */}
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Original Ranking */}
           <div>
             <h4 className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-3">

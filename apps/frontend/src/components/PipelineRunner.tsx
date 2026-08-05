@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Button } from "./ui/button";
 import { useProject } from "@/lib/project";
 import { apiFetch } from "@/lib/api";
+import { exec } from "child_process";
 
 type PipelineStep = {
   name: string;
@@ -29,7 +30,37 @@ export function PipelineRunner() {
   const { currentProject } = useProject();
   const [status, setStatus] = useState<PipelineStatus>({ status: "not_started", steps: [] });
   const [loading, setLoading] = useState(false);
+  const [missingSections, setMissingSections] = useState<{ name: string, message: string }[]>([]);
   const wasRunningRef = useRef(false);
+
+  function getMissingSections(results: any): { name: string, message: string }[] {
+    if(!results) return [];
+    const missing: { name: string, message: string }[] = [];
+
+    const vendors = results?.structured_proposals?.vendors || [];
+    if (vendors.length === 0) { return []; }
+
+    const exec = results?.score_results?.executive_summary;
+    if (!exec.key_findings?.length){
+      missing.push({ name: "Key Findings", message: "No key findings were generated." });
+    }
+
+    const pl = results?.plain_language || {};
+    if(!pl.cost_explanation?.length && !pl.risk_explaination?.length && !pl.compliance_explanation?.length && !pl.sla_explainations?.length){
+      missing.push({ name: "Plain Language", message: "No plain language explanations were generated." });
+    }
+
+    const rec = results?.recommendation;
+    if(!rec.recommended_vendor || !rec.vendor_scores?.length){
+      missing.push({ name: "Recommendation", message: "No recommendation and vendor scores were generated." });
+    }
+
+    const insightMsg = String(results?.insight?.insight ?? "");
+    if (results?.insight?.found === false && (insightMsg.includes("failed") || insightMsg.includes("encountered an error"))){
+      missing.push({ name: "Insight", message: "The insight generation failed." });
+    }
+    return missing;
+  }
 
   useEffect(() => {
     if (!currentProject) return;
@@ -56,6 +87,14 @@ export function PipelineRunner() {
           console.log("Event dispatched");
           // Stop fast polling once completed
           if (intervalId) { clearInterval(intervalId); intervalId = null; }
+          // Check for missing sections in the results
+          try{
+            const results = await apiFetch(`/projects/${currentProject.id}/results`);
+             if (!cancelled) setMissingSections(getMissingSections(results));
+          } catch (e) {
+            console.error("Failed to check for missing sections", e);
+          }
+
         } else if (data.status === "not_started" && wasRunningRef.current) {
           // Server restarted mid-pipeline — clear stale running state
           wasRunningRef.current = false;
@@ -162,7 +201,7 @@ export function PipelineRunner() {
           ? "Running Pipeline..." 
           : isProcessingDocs 
           ? "Extracting Docs..." 
-          : "Run Comparison"}
+          : "Run Analysis"}
       </Button>
       
       {status.status === "error" && status.error && (
@@ -171,7 +210,24 @@ export function PipelineRunner() {
           <div className="text-xs text-red-600 break-words">{status.error}</div>
         </div>
       )}
-      
+      {status.status === "completed" && missingSections.length > 0 && (
+        <div className="text-sm bg-surface border border-rule p-3 rounded-md shadow-sm mt-2 w-80 max-w-[calc(100vw-2rem)] absolute top-full right-0 z-10">
+          <div className="font-medium text-ink mb-2">
+            Some results couldn't be generated
+          </div>
+          <ul className="mb-3 space-y-2">
+            {missingSections.map((s) => (
+              <li key={s.name} className="text-xs">
+                <span className="font-medium text-audit-red">{s.name}:</span>{" "}
+                <span className="text-ink-muted">{s.message}</span>
+              </li>
+            ))}
+          </ul>
+          <Button onClick={handleRun} disabled={loading} className="w-full">
+            Run pipeline again
+          </Button>
+        </div>
+      )}
       {status.status === "running" && status.steps.length > 0 && (
         <div className="text-sm bg-surface border border-rule p-3 rounded-md shadow-sm mt-2 w-72 max-w-[calc(100vw-2rem)] absolute top-full right-0 z-10">
           <div className="font-medium text-ink mb-2">Pipeline Progress</div>

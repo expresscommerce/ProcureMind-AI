@@ -40,12 +40,28 @@ const NAV_GROUPS = [
   }
 ];
 
-export function Sidebar() {
+type SidebarProps = {
+  isOpen: boolean;
+  onClose: () => void;
+};
+
+export function Sidebar({
+  isOpen,
+  onClose,
+}: SidebarProps) {
   const pathname = usePathname();
   const { isAdmin } = useAuth();
 
   return (
-    <aside className="w-[240px] fixed inset-y-0 left-0 bg-paper border-r border-rule flex flex-col z-20">
+    <aside
+      id="mobile-sidebar"
+      aria-label="Sidebar navigation"
+      className={cn(
+        "fixed inset-y-0 left-0 w-[240px] bg-paper border-r border-rule flex flex-col z-20 transition-transform duration-300",
+        isOpen ? "translate-x-0" : "-translate-x-full",
+        "md:translate-x-0"
+      )}
+    >
       <div className="p-6 h-16 flex items-center border-b border-rule">
         <span className="font-serif font-semibold text-xl text-ink">ProcureMind AI</span>
       </div>
@@ -73,6 +89,7 @@ export function Sidebar() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={onClose}
                   data-tour={tourAttr}
                   className={cn(
                     "block px-3 py-2 text-sm font-medium rounded-sm transition-colors outline-none focus-visible:outline-2 focus-visible:outline-navy focus-visible:-outline-offset-2",
@@ -96,6 +113,7 @@ export function Sidebar() {
             </h3>
             <Link
               href="/admin/ml-control-center"
+              onClick={onClose}
               className={cn(
                 "block px-3 py-2 text-sm font-medium rounded-sm transition-colors outline-none focus-visible:outline-2 focus-visible:outline-navy focus-visible:-outline-offset-2",
                 pathname === "/admin/ml-control-center"
@@ -110,7 +128,10 @@ export function Sidebar() {
       </nav>
       <div className="p-4 border-t border-rule flex flex-col gap-2">
         <button
-          onClick={() => window.dispatchEvent(new CustomEvent("open-ask-drawer"))}
+          onClick={() => {
+            onClose();
+            window.dispatchEvent(new CustomEvent("open-ask-drawer"));
+          }}
           data-tour="ask-question"
           className="text-left px-3 py-2 text-sm font-medium text-navy hover:bg-navy/5 rounded-sm outline-none focus-visible:outline-2 focus-visible:outline-navy"
         >
@@ -118,6 +139,7 @@ export function Sidebar() {
         </button>
         <button
           onClick={async () => {
+            onClose();
             await supabase.auth.signOut();
           }}
           className="text-left px-3 py-1 text-sm font-medium text-ink-muted hover:text-ink hover:bg-rule/30 rounded-sm outline-none focus-visible:outline-2 focus-visible:outline-navy mt-2"

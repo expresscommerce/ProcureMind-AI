@@ -8,6 +8,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "./ui/button";
 import { AskDrawer } from "./AskDrawer";
 import { TourProvider } from "./TourProvider";
+import { MobileHeader } from "./MobileHeader";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { session, isLoading: authLoading } = useAuth();
@@ -16,12 +17,26 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [newProjectName, setNewProjectName] = useState("");
   const [creating, setCreating] = useState(false);
   const [isAskDrawerOpen, setIsAskDrawerOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
     const handleOpenAskDrawer = () => setIsAskDrawerOpen(true);
     window.addEventListener("open-ask-drawer", handleOpenAskDrawer);
     return () => window.removeEventListener("open-ask-drawer", handleOpenAskDrawer);
   }, []);
+
+  useEffect(() => {
+    if (!isSidebarOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsSidebarOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isSidebarOpen]);
 
   useEffect(() => {
     const refreshResults = () => {
@@ -85,9 +100,20 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-paper">
-      <Sidebar />
+
+      <MobileHeader isOpen={isSidebarOpen} onMenuClick={() => setIsSidebarOpen((prev) => !prev)} />
+
+      <Sidebar isOpen={isSidebarOpen} 
+        onClose={() => setIsSidebarOpen(false)} />
+
+      {isSidebarOpen && (
+        <div
+        className="fixed inset-0 bg-black/50 z-10 md:hidden"
+        onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
       <TourProvider />
-      <main className="flex-1 pl-[240px]">
+      <main className="ml-0 pt-16 md:pt-0 md:pl-[240px] flex-1 min-w-0">
         <div className="max-w-[1280px] mx-auto p-8 animate-in fade-in duration-500">
           {children}
         </div>

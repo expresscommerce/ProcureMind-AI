@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from "react";
 import { Button } from "./ui/button";
 import { useProject } from "@/lib/project";
 import { apiFetch } from "@/lib/api";
-import { exec } from "child_process";
 
 type PipelineStep = {
   name: string;
@@ -37,16 +36,16 @@ export function PipelineRunner() {
     if(!results) return [];
     const missing: { name: string, message: string }[] = [];
 
-    const vendors = results?.structured_proposals?.vendors || [];
+    const vendors = results?.structured_proposal?.vendors || [];
     if (vendors.length === 0) { return []; }
 
-    const exec = results?.score_results?.executive_summary;
-    if (!exec.key_findings?.length){
+    const summary = results?.score_results?.executive_summary;
+    if (!summary?.key_findings?.length){
       missing.push({ name: "Key Findings", message: "No key findings were generated." });
     }
 
     const pl = results?.plain_language || {};
-    if(!pl.cost_explanation?.length && !pl.risk_explaination?.length && !pl.compliance_explanation?.length && !pl.sla_explainations?.length){
+    if(!pl.cost_explanations?.length && !pl.risk_explanations?.length && !pl.compliance_explanations?.length && !pl.sla_explanations?.length){
       missing.push({ name: "Plain Language", message: "No plain language explanations were generated." });
     }
 

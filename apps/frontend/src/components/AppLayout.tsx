@@ -26,6 +26,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const handleOpenSidebar = () => setIsSidebarOpen(true);
+    window.addEventListener("open-mobile-sidebar", handleOpenSidebar);
+    return () => window.removeEventListener("open-mobile-sidebar", handleOpenSidebar);
+  }, []);
+
+  useEffect(() => {
     if (!isSidebarOpen) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {

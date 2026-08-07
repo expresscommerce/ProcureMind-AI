@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Joyride, EVENTS, STATUS } from "react-joyride";
 import type { Step, EventData } from "react-joyride";
 import { useAuth } from "./AuthProvider";
+import { usePathname } from "next/navigation";
 
 const LS_KEY = "procuremind-tour-seen";
 
@@ -73,16 +74,41 @@ const STEPS: Step[] = [
 export function TourProvider() {
   const { session, isLoading } = useAuth();
   const [run, setRun] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const pathname = usePathname();
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  const steps = useMemo<Step[]>(() => {
+    if (!isMobile) return STEPS;
+    return [
+      {
+        target: "[data-tour='nav-overview-mobile']",
+        title: "Overview",
+        content: "Tap the menu button to open navigation and explore the app.",
+        placement: "bottom",
+      },
+      ...STEPS.slice(0),
+    ];
+  }, [isMobile]);
 
   useEffect(() => {
     if (isLoading || !session) return;
 
     const seen = localStorage.getItem(LS_KEY);
-    if (seen !== "true") {
+    const queryParams = new URLSearchParams(window.location.search);
+    const forceStart = queryParams.get("startTour");
+    if (seen !== "true" || forceStart === "true") {
       const timer = setTimeout(() => setRun(true), 800);
       return () => clearTimeout(timer);
     }
-  }, [session, isLoading]);
+  }, [session, isLoading, pathname]);
 
   const handleFinish = () => {
     localStorage.setItem(LS_KEY, "true");
@@ -91,7 +117,7 @@ export function TourProvider() {
 
   return (
     <Joyride
-      steps={STEPS}
+      steps={steps}
       run={run}
       continuous
       options={{
@@ -108,6 +134,13 @@ export function TourProvider() {
           if (data.status === STATUS.FINISHED || data.status === STATUS.SKIPPED) {
             handleFinish();
           }
+        }
+        if (
+          isMobile &&
+          data.index === 0 &&
+          (data.type === EVENTS.BEACON || data.type === EVENTS.STEP_BEFORE)
+        ) {
+          window.dispatchEvent(new CustomEvent("open-mobile-sidebar"));
         }
       }}
     />

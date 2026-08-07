@@ -16,6 +16,7 @@ export function MobileHeader({ isOpen, onMenuClick }: MobileHeaderProps) {
         aria-label={isOpen ? "Close navigation menu" : "Open navigation menu"}
         aria-expanded={isOpen}
         aria-controls="mobile-sidebar"
+        data-tour="nav-overview-mobile"
         className="rounded-sm p-2 text-2xl leading-none"
       >
         ☰

@@ -14,6 +14,7 @@ type ProjectContextType = {
   setCurrentProject: (project: Project) => void;
   projects: Project[];
   createProject: (name: string) => Promise<Project>;
+  deleteProject: (id: string) => Promise<void>;
   loading: boolean;
 };
 
@@ -22,6 +23,7 @@ const ProjectContext = createContext<ProjectContextType>({
   setCurrentProject: () => {},
   projects: [],
   createProject: async () => { throw new Error("Not initialized"); },
+  deleteProject: async () => {},
   loading: true
 });
 
@@ -63,8 +65,17 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     return data;
   };
 
+  const deleteProject = async (id: string) => {
+    await apiFetch(`/projects/${id}`, { method: "DELETE" });
+    const next = projects.filter((p) => p.id !== id);
+    setProjects(next);
+    if (currentProject?.id === id) {
+      setCurrentProject(next[0] ?? null);
+    }
+  };
+
   return (
-    <ProjectContext.Provider value={{ currentProject, setCurrentProject, projects, createProject, loading }}>
+    <ProjectContext.Provider value={{ currentProject, setCurrentProject, projects, createProject, deleteProject, loading }}>
       {children}
     </ProjectContext.Provider>
   );

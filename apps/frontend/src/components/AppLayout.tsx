@@ -5,17 +5,15 @@ import { Sidebar } from "@/components/Sidebar";
 import { useProject } from "@/lib/project";
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button } from "./ui/button";
 import { AskDrawer } from "./AskDrawer";
 import { TourProvider } from "./TourProvider";
 import { MobileHeader } from "./MobileHeader";
+import { CreateProjectForm } from "./CreateProjectForm";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { session, isLoading: authLoading } = useAuth();
-  const { currentProject, loading: projectLoading, createProject } = useProject();
+  const { currentProject, loading: projectLoading } = useProject();
   const queryClient = useQueryClient();
-  const [newProjectName, setNewProjectName] = useState("");
-  const [creating, setCreating] = useState(false);
   const [isAskDrawerOpen, setIsAskDrawerOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -54,17 +52,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("refresh-results", refreshResults);
   }, [currentProject, queryClient]);
 
-  const handleCreateProject = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newProjectName.trim()) return;
-    setCreating(true);
-    try {
-      await createProject(newProjectName);
-    } finally {
-      setCreating(false);
-    }
-  };
-
   if (authLoading || projectLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-paper">
@@ -83,22 +70,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="w-full max-w-md bg-surface p-8 rounded-md border border-rule shadow-sm">
           <h2 className="font-serif text-2xl font-semibold text-ink mb-2">Create your first Project</h2>
           <p className="text-ink-muted mb-6 text-sm">You need a project space before you can upload vendor proposals.</p>
-          <form onSubmit={handleCreateProject} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-ink mb-1">Project Name</label>
-              <input 
-                type="text" 
-                required
-                value={newProjectName}
-                onChange={(e) => setNewProjectName(e.target.value)}
-                placeholder="e.g. 2026 Vendor Audit"
-                className="w-full h-10 px-3 rounded-sm border border-rule bg-paper text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-navy"
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={creating}>
-              {creating ? "Creating..." : "Create Project"}
-            </Button>
-          </form>
+          <CreateProjectForm />
         </div> 
       </div>
     );

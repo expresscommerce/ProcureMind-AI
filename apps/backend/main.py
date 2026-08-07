@@ -212,6 +212,27 @@ def list_projects(current_user: User = Depends(get_current_user), db: Session = 
     projects = db.query(Project).filter(Project.user_id == current_user.id).all()
     return projects
 
+@app.delete("/projects/{project_id}")
+def delete_project(project_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    project = db.query(Project).filter_by(id=project_id, user_id=current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Remove stored files from Supabase storage
+    docs = db.query(models.Document).filter_by(project_id=project.id).all()
+    for doc in docs:
+        try:
+            supabase = get_supabase()
+            supabase.storage.from_("proposals").remove([str(doc.file_path)])
+        except Exception as e:
+            print(f"Failed to delete file from storage: {e}")
+    
+    db.delete(project)
+    db.commit()
+    
+    pipeline_status.pop(project_id, None)
+    return {"status": "deleted"}
+
 @app.get("/projects/{project_id}/documents")
 def list_documents(project_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     docs = db.query(models.Document).filter_by(project_id=project_id, user_id=current_user.id).all()

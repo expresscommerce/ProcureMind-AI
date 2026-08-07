@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
+import { ProjectSwitcher } from "./ProjectSwitcher";
 
 const NAV_GROUPS = [
   {
@@ -62,8 +63,11 @@ export function Sidebar({
         "md:translate-x-0"
       )}
     >
-      <div className="p-6 h-16 flex items-center border-b border-rule">
-        <span className="font-serif font-semibold text-xl text-ink">ProcureMind AI</span>
+      <div className="p-4 border-b border-rule">
+        <span className="block font-serif font-semibold text-xl text-ink truncate">ProcureMind AI</span>
+        <div className="mt-1">
+          <ProjectSwitcher />
+        </div>
       </div>
       <nav className="flex-1 py-6 px-4 space-y-6 overflow-y-auto">
         {NAV_GROUPS.map((group) => (

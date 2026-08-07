@@ -111,3 +111,4 @@ class Profile(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True)
     is_admin = Column(Boolean, default=False, nullable=False)
+    tour_seen = Column(Boolean, default=False, nullable=False)

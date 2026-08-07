@@ -10,13 +10,24 @@ type AuthContextType = {
   session: Session | null;
   isLoading: boolean;
   isAdmin: boolean;
+  tourSeen: boolean;
+  markTourSeen: () => Promise<void>;
+  resetTour: () => Promise<void>;
 };
 
-const AuthContext = createContext<AuthContextType>({ session: null, isLoading: true, isAdmin: false });
+const AuthContext = createContext<AuthContextType>({
+  session: null,
+  isLoading: true,
+  isAdmin: false,
+  tourSeen: false,
+  markTourSeen: async () => {},
+  resetTour: async () => {},
+});
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [tourSeen, setTourSeen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
@@ -25,6 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (!session) {
+        setTourSeen(false);
         setIsLoading(false);
       }
     });
@@ -35,6 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       if (!session) {
         setIsAdmin(false);
+        setTourSeen(false);
         setIsLoading(false);
       }
     });
@@ -48,6 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       apiFetch("/auth/profile")
         .then((profile) => {
           setIsAdmin(profile.is_admin === true);
+          setTourSeen(profile.tour_seen === true);
         })
         .catch((err) => {
           console.error("Failed to fetch user profile:", err);
@@ -61,6 +75,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [session]);
 
+  const markTourSeen = async () => {
+    try {
+      await apiFetch("/auth/tour-seen", { method: "POST" });
+      setTourSeen(true);
+    } catch (err) {
+      console.error("Failed to mark tour as seen:", err);
+    }
+  };
+
+  const resetTour = async () => {
+    try {
+      await apiFetch("/auth/tour-reset", { method: "POST" });
+      setTourSeen(false);
+    } catch (err) {
+      console.error("Failed to reset tour:", err);
+    }
+  };
+
   useEffect(() => {
     if (!isLoading) {
       if (!session && pathname !== "/login") {
@@ -72,7 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [session, isLoading, pathname, router]);
 
   return (
-    <AuthContext.Provider value={{ session, isLoading, isAdmin }}>
+    <AuthContext.Provider value={{ session, isLoading, isAdmin, tourSeen, markTourSeen, resetTour }}>
       {children}
     </AuthContext.Provider>
   );

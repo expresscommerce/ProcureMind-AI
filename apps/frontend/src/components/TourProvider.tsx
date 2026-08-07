@@ -6,8 +6,6 @@ import type { Step, EventData } from "react-joyride";
 import { useAuth } from "./AuthProvider";
 import { usePathname } from "next/navigation";
 
-const LS_KEY = "procuremind-tour-seen";
-
 const STEPS: Step[] = [
   {
     target: "[data-tour='nav-overview']",
@@ -72,7 +70,7 @@ const STEPS: Step[] = [
 ];
 
 export function TourProvider() {
-  const { session, isLoading } = useAuth();
+  const { session, isLoading, tourSeen, markTourSeen } = useAuth();
   const [run, setRun] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const pathname = usePathname();
@@ -101,18 +99,22 @@ export function TourProvider() {
   useEffect(() => {
     if (isLoading || !session) return;
 
-    const seen = localStorage.getItem(LS_KEY);
     const queryParams = new URLSearchParams(window.location.search);
     const forceStart = queryParams.get("startTour");
-    if (seen !== "true" || forceStart === "true") {
+    if (!tourSeen || forceStart === "true") {
       const timer = setTimeout(() => setRun(true), 800);
       return () => clearTimeout(timer);
     }
-  }, [session, isLoading, pathname]);
+  }, [session, isLoading, tourSeen, pathname]);
 
   const handleFinish = () => {
-    localStorage.setItem(LS_KEY, "true");
     setRun(false);
+    markTourSeen();
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("startTour")) {
+      url.searchParams.delete("startTour");
+      window.history.replaceState({}, "", url);
+    }
   };
 
   return (

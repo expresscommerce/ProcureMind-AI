@@ -18,12 +18,6 @@ export default function ComparisonMatrixPage() {
   const [activeTab, setActiveTab] = useState<Tab>("matrix");
   const { mode } = useViewMode();
 
-  const data = [
-    { name: "Vendor 1", "Annual Cost": "$10,000", "Data Retention": "5 years", "SLA Uptime": "99.9%", "Compliance Risk": "low", "SSO Support": "Yes" },
-    { name: "Vendor 2", "Annual Cost": "$15,000", "Data Retention": "10 years", "SLA Uptime": "99.5%", "Compliance Risk": "medium", "SSO Support": "Yes" },
-    { name: "Vendor 3", "Annual Cost": "$20,000", "Data Retention": "15 years", "SLA Uptime": "99.0%", "Compliance Risk": "high", "SSO Support": "No" }
-  ]
-
   return (
     <ResultsWrapper>
       {(results) => {

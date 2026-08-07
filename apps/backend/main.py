@@ -834,7 +834,29 @@ def get_user_profile(
         except Exception as e:
             db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to create profile: {e}")
-    return {"id": str(profile.id), "is_admin": profile.is_admin, "email": current_user.email}
+    return {"id": str(profile.id), "is_admin": profile.is_admin, "email": current_user.email, "tour_seen": bool(profile.tour_seen)}
+
+@app.post("/auth/tour-seen")
+def mark_tour_seen(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    profile = db.query(models.Profile).filter_by(id=current_user.id).first()
+    if profile:
+        profile.tour_seen = True
+        db.commit()
+    return {"status": "success"}
+
+@app.post("/auth/tour-reset")
+def reset_tour_seen(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    profile = db.query(models.Profile).filter_by(id=current_user.id).first()
+    if profile:
+        profile.tour_seen = False
+        db.commit()
+    return {"status": "success"}
 
 @app.get("/auth/check-email")
 def check_email(

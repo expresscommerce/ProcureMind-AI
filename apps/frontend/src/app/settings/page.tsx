@@ -3,16 +3,15 @@
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-
-
-const LS_KEY = "procuremind-tour-seen";
+import { useAuth } from "@/components/AuthProvider";
 
 export default function SettingsPage() {
   const router = useRouter();
+  const { resetTour } = useAuth();
 
-  const handleRestartTour = () => {
-    localStorage.removeItem(LS_KEY);
-    router.push("/?startTour=true"); 
+  const handleRestartTour = async () => {
+    await resetTour();
+    router.push("/?startTour=true");
   };
 
   return (

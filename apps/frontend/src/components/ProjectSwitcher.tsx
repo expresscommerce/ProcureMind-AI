@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, FolderOpen, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronDown, FolderOpen, Trash2 } from "lucide-react";
 import { useProject } from "@/lib/project";
 import { Button } from "./ui/button";
-import { CreateProjectForm } from "./CreateProjectForm";
+import { CreateProjectButton } from "./CreateProjectButton";
 import { cn } from "@/lib/utils";
 
 const DROPDOWN_WIDTH = 256;
@@ -14,7 +14,6 @@ export function ProjectSwitcher() {
   const { currentProject, projects, setCurrentProject, deleteProject } = useProject();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
   const [deletingProject, setDeletingProject] = useState<{ id: string; name: string } | null>(null);
   const [confirmText, setConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -87,15 +86,7 @@ export function ProjectSwitcher() {
           </span>
           <ChevronDown className="size-3.5 shrink-0" />
         </Button>
-        <Button
-          variant="default"
-          size="sm"
-          aria-label="Create new project"
-          onClick={() => setModalOpen(true)}
-          className="rounded-none border-l border-paper/30 px-2"
-        >
-          <Plus className="size-3.5" />
-        </Button>
+        <CreateProjectButton className="rounded-none border-l border-paper/30 px-2" />
       </div>
 
       {dropdownOpen &&
@@ -147,20 +138,6 @@ export function ProjectSwitcher() {
                 );
               })}
             </ul>
-          </div>,
-          document.body
-        )}
-
-      {modalOpen &&
-        createPortal(
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 backdrop-blur-sm">
-            <div className="bg-surface border border-rule rounded-md p-6 w-[400px] max-w-[90vw] shadow-lg">
-              <h2 className="font-serif text-2xl text-ink font-semibold mb-4">Create New Project</h2>
-              <CreateProjectForm
-                onCreated={() => setModalOpen(false)}
-                onCancel={() => setModalOpen(false)}
-              />
-            </div>
           </div>,
           document.body
         )}

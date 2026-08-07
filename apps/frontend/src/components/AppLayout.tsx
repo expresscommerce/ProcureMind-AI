@@ -91,7 +91,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         />
       )}
       <TourProvider />
-      <main className="ml-0 pt-16 md:pt-0 md:pl-[240px] flex-1 min-w-0">
+        <main className="ml-0 pt-20 md:pt-0 md:pl-[240px] flex-1 min-w-0">
         <div className="max-w-[1280px] mx-auto p-4 sm:p-8 animate-in fade-in duration-500">
           {children}
         </div>

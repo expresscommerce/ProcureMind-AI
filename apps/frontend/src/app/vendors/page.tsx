@@ -34,16 +34,18 @@ export default function VendorDirectoryPage() {
         const vendors = results?.structured_proposal?.vendors || [];
         return (
           <div className="space-y-8">
-            <div className="flex items-start justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div>
                 <h1 className="font-serif text-3xl font-semibold text-ink mb-2">Vendor Directory</h1>
                 <p className="text-ink-muted">Master list of all active vendors and business owners.</p>
               </div>
-              <DocumentUploader label="Add Vendor" />
+              <div className="shrink-0">
+                <DocumentUploader label="Add Vendor" />
+              </div>
             </div>
 
             <div className="border border-rule rounded-md overflow-hidden bg-surface">
-              <Table>
+              <Table className="min-w-[720px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[20%]">Vendor Name</TableHead>
@@ -94,7 +96,7 @@ export default function VendorDirectoryPage() {
                 title="Vendor Profile"
               >
                 <div className="space-y-4 text-sm">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <span className="text-ink-muted block text-xs font-semibold uppercase tracking-wider">Vendor Name</span>
                       <span className="text-ink font-medium text-base">{selectedVendor.name}</span>

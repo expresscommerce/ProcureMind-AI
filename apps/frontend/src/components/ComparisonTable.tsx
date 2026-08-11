@@ -1,5 +1,6 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RiskBadge, RiskLevel } from "@/components/RiskBadge";
+import { cn } from "@/lib/utils";
 
 export interface ComparisonFeature {
   name: string;
@@ -16,17 +17,20 @@ export interface ComparisonVendor {
 interface ComparisonTableProps {
   features: ComparisonFeature[];
   vendors: ComparisonVendor[];
+  className?: string;
 }
 
-export function ComparisonTable({ features, vendors }: ComparisonTableProps) {
+export function ComparisonTable({ features, vendors, className }: ComparisonTableProps) {
+  const vendorWidth = `${75 / Math.max(1, vendors.length)}%`;
+
   return (
     <div className="border border-rule rounded-md overflow-hidden bg-surface">
-      <Table>
+      <Table className={cn("min-w-[720px]", className)}>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-[30%]">Evaluation Criteria</TableHead>
+            <TableHead className="w-[25%]">Evaluation Criteria</TableHead>
             {vendors.map(vendor => (
-              <TableHead key={vendor.id} className="w-[35%]">
+              <TableHead key={vendor.id} style={{ width: vendorWidth }}>
                 <div className="font-medium text-ink">{vendor.name}</div>
                 {vendor.subtitle && <div className="text-xs font-normal text-ink-muted mt-1">{vendor.subtitle}</div>}
               </TableHead>
@@ -38,7 +42,7 @@ export function ComparisonTable({ features, vendors }: ComparisonTableProps) {
             <TableRow key={i}>
               <TableCell className="font-medium text-ink">{feature.name}</TableCell>
               {vendors.map(vendor => (
-                <TableCell key={vendor.id}>
+                <TableCell key={vendor.id} style={{ width: vendorWidth }}>
                   {feature.type === "risk" ? (
                     <RiskBadge level={vendor.values[feature.name] as RiskLevel} />
                   ) : (

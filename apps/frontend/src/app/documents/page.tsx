@@ -1,5 +1,7 @@
 "use client";
 
+import { supabase } from "@/lib/supabase";
+
 import { useEffect, useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -23,7 +25,27 @@ export default function VendorDocumentsPage() {
 
   useEffect(() => {
     fetchDocuments();
+
+    const handleRefresh = () => fetchDocuments();
+    window.addEventListener("refresh-results", handleRefresh);
+
+    return () => {
+      window.removeEventListener("refresh-results", handleRefresh);
+    };
   }, [currentProject?.id]);
+
+  useEffect(() => {
+    const hasProcessing = documents.some(
+      (doc) => doc.status === "Processing" || doc.raw_status === "processing"
+    );
+    if (!hasProcessing) return;
+
+    const timer = setInterval(() => {
+      fetchDocuments();
+    }, 2000);
+
+    return () => clearInterval(timer);
+  }, [documents, currentProject?.id]);
 
   const handleDelete = async (docId: string) => {
     if (!currentProject) return;
@@ -33,23 +55,50 @@ export default function VendorDocumentsPage() {
         method: "DELETE"
       });
       fetchDocuments();
+      console.log("Dispatching refresh-results event in document deletion ");
+      window.dispatchEvent(new CustomEvent("refresh-results"));
+      console.log("Event dispatched");
     } catch (err) {
       alert("Failed to delete document");
     }
   };
 
+  const handleView = async (docId: string) => {
+    if (!currentProject) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("No active session");
+
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await fetch(`${API_URL}/projects/${currentProject.id}/documents/${docId}/download`, {
+        headers: { "Authorization": `Bearer ${session.access_token}` }
+      });
+      if (!res.ok) throw new Error("Failed to load document");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+    } catch (err) {
+      console.error(err);
+      alert("Error loading document");
+    }
+  }
+
   return (
+
     <div className="space-y-8">
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
           <h1 className="font-serif text-3xl font-semibold text-ink mb-2">Vendor Documents</h1>
           <p className="text-ink-muted">Centralized repository for all vendor contracts, DPAs, and order forms.</p>
         </div>
-        <DocumentUploader label="Upload Document" />
+        <div className="shrink-0">
+          <DocumentUploader label="Upload Document" />
+        </div>
       </div>
 
       <div className="border border-rule rounded-md overflow-hidden bg-surface">
-        <Table>
+        <Table className="min-w-[720px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[20%]">Vendor</TableHead>
@@ -73,9 +122,17 @@ export default function VendorDocumentsPage() {
                 <TableCell className="font-mono tabular-nums">{row.date}</TableCell>
                 <TableCell>
                   {row.status === "Active" ? (
-                    <span className="text-verdigris font-medium text-sm">{row.status}</span>
+                    <span className="text-verdigris font-medium text-sm flex items-center gap-1">
+                      <span>✓</span> Active
+                    </span>
+                  ) : row.status === "Processing" ? (
+                    <span className="text-amber-600 font-medium text-sm animate-pulse flex items-center gap-1">
+                      <span className="inline-block animate-spin">⏳</span> Processing...
+                    </span>
                   ) : (
-                    <span className="text-risk-medium font-medium text-sm">{row.status}</span>
+                    <span className="text-audit-red font-medium text-sm flex items-center gap-1">
+                      <span>✕</span> Failed
+                    </span>
                   )}
                 </TableCell>
                 <TableCell className="text-right space-x-2">
@@ -83,7 +140,7 @@ export default function VendorDocumentsPage() {
                     variant="ghost" 
                     size="sm" 
                     className="text-navy font-medium"
-                    onClick={() => window.open(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/projects/${currentProject?.id}/documents/${row.id}/download`, "_blank")}
+                    onClick={() => handleView(row.id)}
                   >
                     View
                   </Button>

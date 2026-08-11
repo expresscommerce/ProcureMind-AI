@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ComparisonTable, ComparisonFeature, ComparisonVendor } from "@/components/ComparisonTable";
@@ -8,6 +9,8 @@ import { ResultsWrapper } from "@/components/ResultsWrapper";
 import { ContractTimeline } from "@/components/ContractTimeline";
 import { useViewMode } from "@/lib/viewMode";
 import { GlossaryTerm } from "@/components/GlossaryTerm";
+import { PipelineRunner } from "@/components/PipelineRunner";
+import { CSVLink } from "react-csv";
 
 type Tab = "matrix" | "timeline";
 
@@ -42,11 +45,30 @@ export default function ComparisonMatrixPage() {
           }
         }));
 
+        const data = resultVendors.map((v: any) => ({
+          Name: v.name,
+          Subtitle: v.category || "",
+          "Annual Cost": v.annualCost || "-",
+          "Data Retention": v.dataRetention || "-",
+          "SLA Uptime": v.slaUptime || "-",
+          "Compliance Risk": v.complianceRisk || "low",
+          "SSO Support": v.ssoSupport || "-",
+        }));
+        
+        const isDisabled = VENDORS.length === 0;
+
+        const handleCsvClick = (event: React.MouseEvent<HTMLAnchorElement>) => {
+          if (isDisabled) {
+            event.preventDefault();
+            return false;
+          }
+        }
+
         const timelineData = results?.timeline_events || [];
 
         return (
           <div className="space-y-8">
-            <div className="flex items-start justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div>
                 <h1 className="font-serif text-3xl font-semibold text-ink mb-2">
                   {mode === "simple" ? "Side-by-Side Comparison" : "Comparison Matrix"}
@@ -57,9 +79,12 @@ export default function ComparisonMatrixPage() {
                     : "Compare vendors side-by-side to evaluate alternative options."}
                 </p>
               </div>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3 shrink-0">
                 <DocumentUploader variant="secondary" label="Add Vendor" />
-                <Button disabled title="Exporting is coming in Phase 4">Export Matrix</Button>
+                <PipelineRunner />
+                <CSVLink onClick={handleCsvClick} data={data} filename="comparison_matrix.csv">
+                  <Button disabled={isDisabled} >Export Matrix</Button>
+                </CSVLink>
               </div>
             </div>
 

@@ -3,6 +3,25 @@ import fitz  # PyMuPDF
 import pdfplumber
 from docx import Document
 
+def validate_file_integrity(file_bytes: bytes, file_type: str) -> None:
+    if not file_bytes or len(file_bytes) == 0:
+        raise ValueError("Uploaded file is empty")
+    
+    file_type_lower = (file_type or "").lower()
+    if "pdf" in file_type_lower or file_type_lower.endswith("pdf"):
+        try:
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            if len(doc) == 0:
+                raise ValueError("PDF document contains no pages")
+            doc.close()
+        except Exception as e:
+            raise ValueError(f"Corrupted or unreadable PDF document: {str(e)}")
+    elif "word" in file_type_lower or file_type_lower.endswith("docx"):
+        try:
+            doc = Document(io.BytesIO(file_bytes))
+        except Exception as e:
+            raise ValueError(f"Corrupted or unreadable DOCX document: {str(e)}")
+
 def extract_text_and_tables(file_bytes: bytes, file_type: str) -> str:
     extracted_text = ""
     
@@ -12,7 +31,7 @@ def extract_text_and_tables(file_bytes: bytes, file_type: str) -> str:
         for page_num in range(len(doc)):
             page = doc[page_num]
             extracted_text += f"\n--- Page {page_num + 1} ---\n"
-            extracted_text += page.get_text("text")
+            extracted_text += str(page.get_text("text"))
         
         # pdfplumber for tables
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
@@ -22,7 +41,7 @@ def extract_text_and_tables(file_bytes: bytes, file_type: str) -> str:
                     extracted_text += f"\n--- Tables on Page {i + 1} ---\n"
                     for table in tables:
                         for row in table:
-                            extracted_text += " | ".join([str(cell).strip() if cell else "" for cell in row]) + "\n"
+                            extracted_text += " | ".join([cell.strip() if cell else "" for cell in row]) + "\n"
                         extracted_text += "\n"
                         
     elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" or file_type.endswith("docx"):
@@ -44,3 +63,4 @@ def extract_text_and_tables(file_bytes: bytes, file_type: str) -> str:
             extracted_text = ""
 
     return extracted_text
+

@@ -4,10 +4,8 @@ import { useViewMode } from "@/lib/viewMode";
 import { GlossaryTerm } from "@/components/GlossaryTerm";
 
 interface PlainLanguageItemProps {
-  id: string;
   plainLanguage?: string;
   expertContent: React.ReactNode;
-  type?: "cost" | "risk" | "compliance" | "sla";
 }
 
 /**

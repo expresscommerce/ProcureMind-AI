@@ -60,7 +60,7 @@ export default function ExecutiveSummaryPage() {
 
         return (
           <div className="space-y-8">
-            <div className="flex items-start justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div>
                 <h1 className="font-serif text-3xl font-semibold text-ink mb-2">
                   {mode === "simple" ? "Summary Report" : "Executive Summary"}
@@ -71,12 +71,14 @@ export default function ExecutiveSummaryPage() {
                     : "High-level report on vendor audit findings for the board."}
                 </p>
               </div>
-              <Button 
-                onClick={handleDownloadPdf}
-                disabled={!currentProject || !hasData || downloading}
-              >
-                {downloading ? "Generating..." : "Generate PDF Report"}
-              </Button>
+              <div className="shrink-0">
+                <Button 
+                  onClick={handleDownloadPdf}
+                  disabled={!currentProject || !hasData || downloading}
+                >
+                  {downloading ? "Generating..." : "Generate PDF Report"}
+                </Button>
+              </div>
             </div>
 
             {/* Insight callout */}

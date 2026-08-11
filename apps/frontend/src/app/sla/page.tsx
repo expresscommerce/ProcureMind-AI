@@ -19,7 +19,7 @@ export default function SLATrackerPage() {
 
         return (
           <div className="space-y-8">
-            <div className="flex items-start justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div>
                 <h1 className="font-serif text-3xl font-semibold text-ink mb-2">
                   {mode === "simple" ? "Service Level Tracking" : <><GlossaryTerm term="SLA">SLA</GlossaryTerm> Tracker</>}
@@ -30,7 +30,9 @@ export default function SLATrackerPage() {
                     : "Monitor vendor service level agreements and identify missed targets."}
                 </p>
               </div>
-              <Button>Calculate Credits</Button>
+              <div className="shrink-0">
+                <Button>Calculate Credits</Button>
+              </div>
             </div>
 
             {mode === "simple" && SLA_DATA.length > 0 && (
@@ -40,7 +42,7 @@ export default function SLATrackerPage() {
             )}
 
             <div className="border border-rule rounded-md overflow-hidden bg-surface">
-              <Table>
+              <Table className="min-w-[720px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[20%]">Vendor</TableHead>
@@ -71,9 +73,7 @@ export default function SLATrackerPage() {
                         <TableCell>
                           {mode === "simple" && pl ? (
                             <PlainLanguageItem
-                              id={row.id}
                               plainLanguage={pl}
-                              type="sla"
                               expertContent={
                                 row.status === "met" ? (
                                   <span className="text-verdigris font-medium text-sm">Target Met</span>

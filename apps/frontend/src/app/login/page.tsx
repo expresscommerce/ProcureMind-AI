@@ -4,6 +4,7 @@ import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -19,7 +20,7 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    
+
     try {
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -28,6 +29,12 @@ export default function LoginPage() {
       } else {
         if (password !== confirmPassword) {
           throw new Error("Passwords don't match");
+        }
+        const res = await fetch(`${API_URL}/auth/check-email?email=${encodeURIComponent(email)}`);
+        const check = await res.json();
+        if (!res.ok) throw new Error(check.detail || "Failed to check email");
+        if (check.exists) {
+          throw new Error("An account with this email already exists.");
         }
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
@@ -58,7 +65,7 @@ export default function LoginPage() {
       {/* Right Panel */}
       <div className="w-full md:w-[40%] flex items-center justify-center bg-surface p-6 sm:p-12">
         <div className="w-full max-w-[380px] animate-in fade-in duration-500">
-          
+
           <div className="flex items-center gap-6 mb-8 border-b border-rule">
             <button
               onClick={() => {
@@ -98,8 +105,8 @@ export default function LoginPage() {
             <form onSubmit={handleAuth} className="space-y-5">
               <div className="space-y-1">
                 <label className="block text-sm text-ink-muted">Email</label>
-                <input 
-                  type="email" 
+                <input
+                  type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -109,8 +116,8 @@ export default function LoginPage() {
 
               <div className="space-y-1">
                 <label className="block text-sm text-ink-muted">Password</label>
-                <input 
-                  type="password" 
+                <input
+                  type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -121,8 +128,8 @@ export default function LoginPage() {
               {!isLogin && (
                 <div className="space-y-1">
                   <label className="block text-sm text-ink-muted">Confirm password</label>
-                  <input 
-                    type="password" 
+                  <input
+                    type="password"
                     required
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
@@ -135,8 +142,8 @@ export default function LoginPage() {
                 <p className="text-sm text-audit-red">{error}</p>
               )}
 
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 disabled={loading}
                 className="w-full h-10 mt-2 bg-navy text-paper font-medium rounded-md hover:bg-navy/90 transition-colors disabled:opacity-70 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-navy"
               >

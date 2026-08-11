@@ -181,7 +181,7 @@ export default function MLControlCenterPage() {
         </div>
 
         <div className="border border-rule rounded-md overflow-hidden bg-surface">
-          <Table>
+          <Table className="min-w-[900px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Version</TableHead>

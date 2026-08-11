@@ -3,14 +3,13 @@ from dotenv import load_dotenv
 load_dotenv()
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import jwt, JWTError
-import httpx
+from supabase import create_client
 from pydantic import BaseModel
 
 security = HTTPBearer()
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 
 class User(BaseModel):
     id: str
@@ -19,31 +18,22 @@ class User(BaseModel):
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
     token = credentials.credentials
     try:
-        # Assuming JWT is signed using HS256 with the Supabase JWT secret
-        payload = jwt.decode(
-            token,
-            SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            options={"verify_aud": False}
-        )
-        user_id: str = payload.get("sub")
-        email: str = payload.get("email", "")
-        
-        if user_id is None:
+        if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+            raise ValueError("Supabase credentials not configured")
+        supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        auth_response = supabase.auth.get_user(token)
+        if auth_response is None or auth_response.user is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
-        return User(id=user_id, email=email)
-    except JWTError as e:
-        # Write error to a file so we can read it
-        with open("jwt_error.log", "w") as f:
-            f.write(str(e))
-
+        return User(id=auth_response.user.id, email=auth_response.user.email or "")
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authentication credentials: {e}",
+            detail=f"Invalid authentication credentials: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )

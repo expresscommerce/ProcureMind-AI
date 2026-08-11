@@ -24,7 +24,7 @@ export default function CostAnalysisPage() {
 
         return (
           <div className="space-y-8">
-            <div className="flex items-start justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div>
                 <h1 className="font-serif text-3xl font-semibold text-ink mb-2">
                   {mode === "simple" ? "Cost Breakdown" : "Cost Analysis Ledger"}
@@ -35,27 +35,27 @@ export default function CostAnalysisPage() {
                     : "Detailed breakdown of vendor spend and identified discrepancies."}
                 </p>
               </div>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3 shrink-0">
                 <Button variant="secondary" onClick={() => alert("Report exported (simulated)")}>Export Report</Button>
                 <Button onClick={() => alert("Discrepancies reconciled (simulated)")}>Reconcile Discrepancies</Button>
               </div>
             </div>
 
-            <div className="flex items-center gap-12 p-6 border border-rule rounded-md bg-surface">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-6 sm:gap-12 p-6 border border-rule rounded-md bg-surface">
               <div>
                 <div className="text-sm font-medium text-ink-muted uppercase tracking-wide mb-1">
                   {mode === "simple" ? "What They Quoted" : "Stated Total Spend"}
                 </div>
                 <div className="font-mono text-2xl tabular-nums text-ink">{totalStated}</div>
               </div>
-              <div className="h-12 w-px bg-rule"></div>
+              <div className="h-px w-full bg-rule sm:h-12 sm:w-px"></div>
               <div>
                 <div className="text-sm font-medium text-ink-muted uppercase tracking-wide mb-1">
                   {mode === "simple" ? "What It Actually Costs" : "Actual Audited Spend"}
                 </div>
                 <div className="font-mono text-2xl tabular-nums text-audit-red font-semibold">{totalActual}</div>
               </div>
-              <div className="h-12 w-px bg-rule"></div>
+              <div className="h-px w-full bg-rule sm:h-12 sm:w-px"></div>
               <div>
                 <div className="text-sm font-medium text-ink-muted uppercase tracking-wide mb-1">
                   {mode === "simple" ? "Hidden Cost Gap" : "Unaccounted Variance"}
@@ -75,7 +75,7 @@ export default function CostAnalysisPage() {
                 {mode === "simple" ? "Cost Details" : "Line-Item Breakdown"}
               </h2>
               <div className="border border-rule rounded-md overflow-hidden bg-surface">
-                <Table>
+                <Table className="min-w-[720px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[20%]">Vendor</TableHead>
@@ -104,9 +104,7 @@ export default function CostAnalysisPage() {
                           <TableCell>{row.category}</TableCell>
                           <TableCell>
                             <PlainLanguageItem
-                              id={row.id}
                               plainLanguage={pl}
-                              type="cost"
                               expertContent={
                                 row.hasDiscrepancy ? (
                                   <HiddenCostAnnotation statedPrice={row.statedPrice} correctedPrice={row.actualPrice} />
@@ -142,7 +140,7 @@ export default function CostAnalysisPage() {
                 title="Cost Discrepancy Details"
               >
                 <div className="space-y-4 text-sm">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <span className="text-ink-muted block text-xs font-semibold uppercase tracking-wider">Vendor</span>
                       <span className="text-ink font-medium text-base">{selectedCost.vendor}</span>

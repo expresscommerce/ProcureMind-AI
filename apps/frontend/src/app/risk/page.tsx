@@ -51,7 +51,7 @@ export default function RiskAssessmentPage() {
 
         return (
           <div className="space-y-8">
-            <div className="flex items-start justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div>
                 <h1 className="font-serif text-3xl font-semibold text-ink mb-2">
                   {mode === "simple" ? "Vendor Risk Check" : "Risk Assessment Matrix"}
@@ -62,7 +62,9 @@ export default function RiskAssessmentPage() {
                     : "Evaluate vendor health across financial, security, and operational domains."}
                 </p>
               </div>
-              <Button onClick={() => alert("Assessment running (simulated)")}>Run Assessment</Button>
+              <div className="shrink-0">
+                <Button onClick={() => alert("Assessment running (simulated)")}>Run Assessment</Button>
+              </div>
             </div>
 
             {mode === "simple" && RISK_DATA.length > 0 && (
@@ -72,7 +74,7 @@ export default function RiskAssessmentPage() {
             )}
 
             <div className="border border-rule rounded-md overflow-hidden bg-surface">
-              <Table>
+              <Table className="min-w-[720px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[15%]">Vendor</TableHead>
@@ -103,9 +105,7 @@ export default function RiskAssessmentPage() {
                         <TableCell>
                           {mode === "simple" && pl ? (
                             <PlainLanguageItem
-                              id={row.id}
                               plainLanguage={pl}
-                              type="risk"
                               expertContent={<ScoreBar score={row.overallScore} />}
                             />
                           ) : (
@@ -146,7 +146,7 @@ export default function RiskAssessmentPage() {
                 </div>
 
                 <div className="border border-rule rounded-md overflow-hidden bg-surface">
-                  <Table>
+                  <Table className="min-w-[720px]">
                     <TableHeader>
                       <TableRow>
                         <TableHead>Vendor</TableHead>
@@ -183,7 +183,7 @@ export default function RiskAssessmentPage() {
                 title="Risk Assessment Details"
               >
                 <div className="space-y-4 text-sm">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <span className="text-ink-muted block text-xs font-semibold uppercase tracking-wider">Vendor</span>
                       <span className="text-ink font-medium text-base">{selectedRisk.vendor}</span>

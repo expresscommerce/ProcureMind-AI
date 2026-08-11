@@ -1,9 +1,10 @@
 import os
 from dotenv import load_dotenv
 load_dotenv()
-from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Response
+from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, Response, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from supabase import create_client, Client
 import uuid
@@ -11,9 +12,10 @@ import uuid
 from auth import get_current_user, User
 from db import get_db, SessionLocal
 from models import Document, Project, Result, ContractOutcome, ModelRegistry
-from document_parser import extract_text_and_tables
+from document_parser import extract_text_and_tables, validate_file_integrity
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
+import models
 import agent
 from ml.features import FeatureExtractor
 from ml.predictor import predict_project_risk
@@ -37,52 +39,108 @@ def get_supabase() -> Client:
         raise ValueError("Supabase credentials not configured")
     return create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
+from db import engine
+
+@app.on_event("startup")
+def startup_db_migrations():
+    try:
+        with engine.connect() as conn:
+            conn.execute(sql_text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'processing';"))
+            conn.commit()
+    except Exception as e:
+        print("Startup DB migration notice:", e)
+
+def clear_analysis_result(result):
+    result.cost_breakdown = {"total_spend": "$0", "actual_spend": "$0", "discrepancies": "$0", "items": []}
+    result.risk_flags = {"high": 0, "medium": 0, "low": 0, "items": []}
+    result.policy_rules = {"items": []}
+    result.score_results = {}
+    result.plain_language = {}
+    result.timeline_events = []
+    result.recommendation = {}
+    result.insight = {}
+    result.red_team = {}
+    result.feature_snapshot = {}
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+def process_document_background(document_id: str, file_bytes: bytes, file_type: str):
+    session = SessionLocal()
+    try:
+        doc = session.query(models.Document).filter_by(id=document_id).first()
+        if not doc:
+            return
+            
+        extracted_text = extract_text_and_tables(file_bytes, file_type)
+        if extracted_text and len(extracted_text.strip()) > 10:
+            doc.raw_text = extracted_text
+            doc.status = "ready"
+        else:
+            print(f"Background extraction produced no readable text for doc {document_id}")
+            doc.raw_text = ""
+            doc.status = "failed"
+        session.commit()
+    except Exception as e:
+        print(f"Background extraction failed for doc {document_id}: {e}")
+        try:
+            doc = session.query(models.Document).filter_by(id=document_id).first()
+            if doc:
+                doc.status = "failed"
+                session.commit()
+        except Exception:
+            session.rollback()
+    finally:
+        session.close()
 
 @app.post("/projects/{project_id}/documents")
 async def upload_document(
     project_id: str,
     vendor_name: str = Form(...),
     file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Verify project exists and user has access
+    # Verify if the project exists and user has access
     project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not project:
         # Create it if it doesn't exist just for the sake of the API flow
-        # In a real app we'd have a separate POST /projects endpoint
         project = Project(id=project_id, name="Test Project", user_id=current_user.id)
         db.add(project)
         db.commit()
     
     file_bytes = await file.read()
     
-    # Upload to Supabase Storage
+    # 1. Fast Synchronous Validation (< 30ms) - Fails immediately if file is corrupt/unreadable
+    try:
+        validate_file_integrity(file_bytes, file.content_type or "application/octet-stream")
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+    
+    # 2. Fast Upload to Supabase Storage
     try:
         supabase = get_supabase()
         file_path = f"{project_id}/{uuid.uuid4()}_{file.filename}"
         supabase.storage.from_("proposals").upload(
             path=file_path,
             file=file_bytes,
-            file_options={"content-type": file.content_type}
+            file_options={"content-type": file.content_type or "application/octet-stream"}
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload to storage: {str(e)}")
 
-    # Parse document
-    extracted_text = extract_text_and_tables(file_bytes, file.content_type)
-    
-    # Save to database
+    # 3. Save initial document to database with 'processing' status
     document = Document(
         project_id=project.id,
         user_id=current_user.id,
         file_name=file.filename,
         file_path=file_path,
         file_type=file.content_type,
-        raw_text=extracted_text
+        raw_text="",
+        status="processing",
+        vendor_name=vendor_name
     )
     db.add(document)
     db.flush() # Populate document.id immediately
@@ -101,7 +159,7 @@ async def upload_document(
         db.add(result)
     
     if not result.structured_proposal:
-        result.structured_proposal = {"vendors": []}
+        result.structured_proposal = {"vendors": []}  # type: ignore[assignment]
     if "vendors" not in result.structured_proposal:
         result.structured_proposal["vendors"] = []
         
@@ -116,20 +174,30 @@ async def upload_document(
             "spend": "$0",
             "risk": "low"
         })
-        # SQLAlchemy JSON mutations might need to be explicitly flagged or re-assigned
-        result.structured_proposal = {"vendors": vendors}
+        result.structured_proposal = {"vendors": vendors}  # type: ignore[assignment]
+        clear_analysis_result(result)
         
     db.commit()
     db.refresh(document)
     
+    # 4. Dispatch pdfplumber extraction to background thread
+    background_tasks.add_task(
+        process_document_background,
+        str(document.id),
+        file_bytes,
+        file.content_type or "application/octet-stream"
+    )
+    
+    # 5. Return HTTP response immediately (< 100ms)
     return {
         "id": str(document.id),
         "file_name": document.file_name,
-        "vendor_name": vendor_name
+        "vendor_name": vendor_name,
+        "status": "processing"
     }
 
 # Dummy status storage for simplicity in this phase
-pipeline_status = {}
+pipeline_status: Dict[str, Any] = {}
 
 @app.post("/projects")
 def create_project(name: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -144,6 +212,27 @@ def list_projects(current_user: User = Depends(get_current_user), db: Session = 
     projects = db.query(Project).filter(Project.user_id == current_user.id).all()
     return projects
 
+@app.delete("/projects/{project_id}")
+def delete_project(project_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    project = db.query(Project).filter_by(id=project_id, user_id=current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Remove stored files from Supabase storage
+    docs = db.query(models.Document).filter_by(project_id=project.id).all()
+    for doc in docs:
+        try:
+            supabase = get_supabase()
+            supabase.storage.from_("proposals").remove([str(doc.file_path)])
+        except Exception as e:
+            print(f"Failed to delete file from storage: {e}")
+    
+    db.delete(project)
+    db.commit()
+    
+    pipeline_status.pop(project_id, None)
+    return {"status": "deleted"}
+
 @app.get("/projects/{project_id}/documents")
 def list_documents(project_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     docs = db.query(models.Document).filter_by(project_id=project_id, user_id=current_user.id).all()
@@ -155,17 +244,43 @@ def list_documents(project_id: str, current_user: User = Depends(get_current_use
             if "id" in v:
                 vendor_map[v["id"]] = v.get("name", "Unknown")
                 
-    return [
-        {
+    formatted_docs = []
+    for d in docs:
+        raw_status = getattr(d, "status", None)
+        has_text = bool(d.raw_text and len(d.raw_text.strip()) > 10)
+        
+        if not raw_status:
+            raw_status = "ready" if has_text else "failed"
+            
+        display_status = "Active"
+        if raw_status == "processing":
+            display_status = "Processing"
+        elif raw_status == "failed" or not has_text:
+            display_status = "Failed"
+            raw_status = "failed"
+            
+        if getattr(d, "vendor_name", None):
+            v_name = d.vendor_name
+        else:
+            v_name = vendor_map.get(str(d.id)) or (d.file_name.rsplit('.',1)[0].replace('_',' '))
+
+        if not v_name or v_name == "Pending Extraction...":
+            if raw_status == "processing":
+                v_name = "Pending Extraction..."
+            else:
+                v_name = d.file_name.rsplit('.', 1)[0].replace('_', ' ')
+
+        formatted_docs.append({
             "id": str(d.id),
-            "vendor": vendor_map.get(str(d.id), "Pending Extraction..."), 
+            "vendor": v_name,
             "name": d.file_name,
             "type": d.file_type or "Unknown",
             "date": d.created_at.strftime("%Y-%m-%d"),
-            "status": "Active"
-        }
-        for d in docs
-    ]
+            "status": display_status,
+            "raw_status": raw_status
+        })
+        
+    return formatted_docs
 @app.delete("/projects/{project_id}/documents/{document_id}")
 def delete_document(project_id: str, document_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     doc = db.query(models.Document).filter_by(id=document_id, project_id=project_id, user_id=current_user.id).first()
@@ -175,7 +290,7 @@ def delete_document(project_id: str, document_id: str, current_user: User = Depe
     # Try to delete from supabase storage
     try:
         supabase = get_supabase()
-        supabase.storage.from_("proposals").remove([doc.file_path])
+        supabase.storage.from_("proposals").remove([str(doc.file_path)])
     except Exception as e:
         print(f"Failed to delete from storage: {e}")
         
@@ -184,7 +299,8 @@ def delete_document(project_id: str, document_id: str, current_user: User = Depe
     if result and result.structured_proposal and "vendors" in result.structured_proposal:
         vendors = result.structured_proposal["vendors"]
         updated_vendors = [v for v in vendors if v.get("id") != document_id]
-        result.structured_proposal = {"vendors": updated_vendors}
+        result.structured_proposal = {"vendors": updated_vendors}  # type: ignore[assignment]
+        clear_analysis_result(result)
         
     db.delete(doc)
     db.commit()
@@ -198,8 +314,9 @@ def download_document(project_id: str, document_id: str, current_user: User = De
     try:
         supabase = get_supabase()
         # Create a signed URL valid for 60 seconds
-        res = supabase.storage.from_("proposals").create_signed_url(doc.file_path, 60)
-        return RedirectResponse(url=res["signedURL"])
+        res = supabase.storage.from_("proposals").create_signed_url(str(doc.file_path), 60)
+        signed_url = res.get("signedURL") or res.get("signedUrl") or ""
+        return RedirectResponse(url=signed_url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate download link: {e}")
 
@@ -209,7 +326,8 @@ def delete_vendor(project_id: str, vendor_name: str, current_user: User = Depend
     if result and result.structured_proposal and "vendors" in result.structured_proposal:
         vendors = result.structured_proposal["vendors"]
         updated_vendors = [v for v in vendors if v.get("name") != vendor_name]
-        result.structured_proposal = {"vendors": updated_vendors}
+        result.structured_proposal = {"vendors": updated_vendors}  # type: ignore[assignment]
+        clear_analysis_result(result)
         db.commit()
     return {"status": "deleted"}
 
@@ -218,9 +336,9 @@ def set_weights(project_id: str, weights: dict, current_user: User = Depends(get
     # Save weights to the result record for this project
     result = db.query(models.Result).filter_by(project_id=project_id, user_id=current_user.id).first()
     if result and result.recommendation:
-        rec = dict(result.recommendation)
+        rec = dict(result.recommendation)  # type: ignore[arg-type]
         rec["weights_used"] = weights
-        result.recommendation = rec
+        result.recommendation = rec  # type: ignore[assignment]
         db.commit()
     return {"status": "success", "weights": weights}
 
@@ -242,63 +360,92 @@ def set_policy_rules(project_id: str, rules: list, current_user: User = Depends(
 
 import asyncio
 
+PIPELINE_STEPS = [
+    "Document Parsing",
+    "Information Extraction",
+    "Cost Analysis",
+    "Saving Results"
+]
+
+def _advance_step(project_id: str, step_name: str):
+    ps = pipeline_status[project_id]
+    ps["current_step"] = step_name
+    for s in ps["steps"]:
+        if s["name"] == step_name:
+            s["status"] = "running"
+
+def _done_step(project_id: str, step_name: str):
+    for s in pipeline_status[project_id]["steps"]:
+        if s["name"] == step_name:
+            s["status"] = "done"
+
 @app.post("/projects/{project_id}/run")
 async def run_pipeline(project_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Start a background task for the pipeline
     pipeline_status[project_id] = {
         "status": "running",
         "current_step": "Document Parsing",
-        "steps": [
-            {"name": "Document Parsing", "status": "pending"},
-            {"name": "Information Extraction", "status": "pending"},
-            {"name": "Cost Analysis", "status": "pending"},
-            {"name": "Risk Assessment", "status": "pending"},
-            {"name": "Feature Comparison", "status": "pending"},
-            {"name": "Compliance Validation", "status": "pending"},
-            {"name": "Vendor Scoring", "status": "pending"},
-            {"name": "Timeline Analysis", "status": "pending"},
-            {"name": "Insight Detection", "status": "pending"},
-            {"name": "Red-Team Review", "status": "pending"},
-            {"name": "Executive Summary", "status": "pending"}
-        ]
+        "steps": [{"name": n, "status": "pending"} for n in PIPELINE_STEPS]
     }
     
     async def mock_pipeline():
-        for step in pipeline_status[project_id]["steps"]:
-            step["status"] = "running"
-            pipeline_status[project_id]["current_step"] = step["name"]
-            
-            if step["name"] == "Information Extraction":
-                # Build the FAISS index during extraction
-                session = SessionLocal()
-                try:
-                    db_docs = session.query(models.Document).filter_by(project_id=project_id).all()
-                    if db_docs:
-                        agent.build_project_index(project_id, db_docs)
-                except Exception as e:
-                    print("Error building index:", e)
-                finally:
-                    session.close()
-
-            await asyncio.sleep(2) # Simulate processing time
-            step["status"] = "done"
-            
-        pipeline_status[project_id]["status"] = "completed"
-        
-        # Save mock results to DB
         session = SessionLocal()
         try:
+            # --- Step 1: Wait for background extractions (up to 60s) ---
+            _advance_step(project_id, "Document Parsing")
+            for _ in range(60):
+                pending = session.query(models.Document).filter_by(
+                    project_id=project_id, status="processing"
+                ).count()
+                if pending == 0:
+                    break
+                session.close()
+                await asyncio.sleep(1)
+                session = SessionLocal()
+            _done_step(project_id, "Document Parsing")
+
+            # --- Fail-fast: validate API key before starting LLM work ---
+            _advance_step(project_id, "Information Extraction")
+            try:
+                llm = agent.get_llm()
+                await asyncio.wait_for(
+                    llm.ainvoke("respond with only the word OK"),
+                    timeout=10
+                )
+            except Exception as e:
+                pipeline_status[project_id]["status"] = "error"
+                pipeline_status[project_id]["error"] = (
+                    f"API key validation failed. Check your DEEPINFRA_API_KEY or OPENAI_API_KEY. "
+                    f"Details: {str(e)}"
+                )
+                return
+
             db_docs = session.query(models.Document).filter_by(project_id=project_id).all()
-            analysis = await agent.analyze_all_documents(db_docs)
-            
-            # Extract feature snapshots for all vendors
+            try:
+                def progress_cb(msg: str):
+                    pipeline_status[project_id]["current_sub_step"] = msg
+
+                analysis = await asyncio.wait_for(
+                    agent.analyze_all_documents(db_docs, progress_cb=progress_cb),
+                    timeout=300  # 5-minute hard cap — prevents infinite hang
+                )
+            except asyncio.TimeoutError:
+                pipeline_status[project_id]["status"] = "error"
+                pipeline_status[project_id]["error"] = (
+                    "Analysis timed out after 5 minutes. The LLM API may be slow or unresponsive. "
+                    "Please try again in a moment."
+                )
+                return
+            pipeline_status[project_id]["current_sub_step"] = ""
+            _done_step(project_id, "Information Extraction")
+
+            # --- Step 3: Feature extraction per vendor ---
+            _advance_step(project_id, "Cost Analysis")
             feature_snapshot = {}
             for v in analysis.get("structured_proposal", {}).get("vendors", []):
                 doc = next((d for d in db_docs if str(d.id) == v.get("id")), None)
                 raw_text = doc.raw_text if doc else ""
-                
+
                 v_costs = [c for c in analysis.get("cost_breakdown", {}).get("items", []) if c.get("vendor") == v.get("name")]
-                
                 v_risks_items = [r for r in analysis.get("risk_flags", {}).get("items", []) if r.get("vendor") == v.get("name")]
                 v_risk_data = {}
                 if v_risks_items:
@@ -308,9 +455,9 @@ async def run_pipeline(project_id: str, current_user: User = Depends(get_current
                         "securityRisk": first_r.get("securityRisk", "low"),
                         "operationalRisk": first_r.get("operationalRisk", "low")
                     }
-                
+
                 v_compliance = [c for c in analysis.get("policy_rules", {}).get("items", []) if c.get("vendor") == v.get("name")]
-                
+
                 v_sla = []
                 if "sla_metrics" in analysis:
                     v_sla = [s for s in analysis["sla_metrics"].get("items", []) if s.get("vendor") == v.get("name")]
@@ -323,18 +470,46 @@ async def run_pipeline(project_id: str, current_user: User = Depends(get_current
                     risk_data=v_risk_data,
                     compliance_items=v_compliance,
                     sla_items=v_sla,
-                    raw_text=raw_text
+                    raw_text=str(raw_text)
                 )
                 feature_snapshot[v.get("id")] = v_features
-                
+            _done_step(project_id, "Cost Analysis")
+
+            # --- Step 4: Save results to DB ---
+            _advance_step(project_id, "Saving Results")
             score_results = analysis["score_results"]
-            
             result = session.query(models.Result).filter_by(project_id=project_id).first()
+
+            # Preserve user-entered vendor names by ID when writing fresh analysis output.
+            preserved_name_by_id = {}
+            for d in db_docs:
+                if d.vendor_name and d.vendor_name.strip():
+                    preserved_name_by_id[str(d.id)] = d.vendor_name.strip()
+
+            if result and result.structured_proposal and "vendors" in result.structured_proposal:
+                for existing_vendor in result.structured_proposal["vendors"]:
+                    existing_id = existing_vendor.get("id")
+                    existing_name = existing_vendor.get("name")
+                    if existing_id and existing_name and existing_id not in preserved_name_by_id:
+                        preserved_name_by_id[existing_id] = existing_name
+
+            merged_structured_proposal = dict(analysis.get("structured_proposal") or {})
+            merged_vendors = []
+            for analyzed_vendor in merged_structured_proposal.get("vendors", []):
+                merged_vendor = dict(analyzed_vendor)
+                vendor_id = merged_vendor.get("id")
+                if vendor_id is not None:
+                    preserved_name = preserved_name_by_id.get(str(vendor_id))
+                    if preserved_name:
+                        merged_vendor["name"] = preserved_name
+                merged_vendors.append(merged_vendor)
+            merged_structured_proposal["vendors"] = merged_vendors
+
             if not result:
                 result = models.Result(
-                    project_id=project_id, 
+                    project_id=project_id,
                     user_id=current_user.id,
-                    structured_proposal=analysis["structured_proposal"],
+                    structured_proposal=merged_structured_proposal,
                     cost_breakdown=analysis["cost_breakdown"],
                     risk_flags=analysis["risk_flags"],
                     policy_rules=analysis["policy_rules"],
@@ -348,7 +523,7 @@ async def run_pipeline(project_id: str, current_user: User = Depends(get_current
                 )
                 session.add(result)
             else:
-                result.structured_proposal = analysis["structured_proposal"]
+                result.structured_proposal = merged_structured_proposal
                 result.cost_breakdown = analysis["cost_breakdown"]
                 result.risk_flags = analysis["risk_flags"]
                 result.policy_rules = analysis["policy_rules"]
@@ -360,12 +535,17 @@ async def run_pipeline(project_id: str, current_user: User = Depends(get_current
                 result.red_team = analysis.get("red_team", {})
                 result.feature_snapshot = feature_snapshot
             session.commit()
+            _done_step(project_id, "Saving Results")
+            pipeline_status[project_id]["status"] = "completed"
+
         except Exception as e:
-            print("Error saving analysis results:", e)
+            print("Pipeline error:", e)
+            pipeline_status[project_id]["status"] = "error"
+            pipeline_status[project_id]["error"] = str(e)
             session.rollback()
         finally:
             session.close()
-            
+
     asyncio.create_task(mock_pipeline())
     return {"status": "started"}
  
@@ -585,14 +765,21 @@ def log_contract_outcome(
     
     if existing:
         # Update existing
-        existing.delivered_on_time = payload.delivered_on_time
-        existing.actual_delivery_days = payload.actual_delivery_days
-        existing.hidden_costs_materialized = payload.hidden_costs_materialized
-        existing.actual_total_cost = payload.actual_total_cost
-        existing.negotiation_asks_succeeded = payload.negotiation_asks_succeeded
-        existing.overall_satisfaction = payload.overall_satisfaction
-        existing.notes = payload.notes
-        existing.logged_by = current_user.id
+        if payload.delivered_on_time is not None:
+            existing.delivered_on_time = payload.delivered_on_time  # type: ignore[assignment]
+        if payload.actual_delivery_days is not None:
+            existing.actual_delivery_days = payload.actual_delivery_days  # type: ignore[assignment]
+        if payload.hidden_costs_materialized is not None:
+            existing.hidden_costs_materialized = payload.hidden_costs_materialized  # type: ignore[assignment]
+        if payload.actual_total_cost is not None:
+            existing.actual_total_cost = payload.actual_total_cost  # type: ignore[assignment]
+        if payload.negotiation_asks_succeeded is not None:
+            existing.negotiation_asks_succeeded = payload.negotiation_asks_succeeded  # type: ignore[assignment]
+        if payload.overall_satisfaction is not None:
+            existing.overall_satisfaction = payload.overall_satisfaction  # type: ignore[assignment]
+        if payload.notes is not None:
+            existing.notes = payload.notes  # type: ignore[assignment]
+        existing.logged_by = uuid.UUID(current_user.id) if isinstance(current_user.id, str) else current_user.id  # type: ignore[assignment]
     else:
         # Create new
         outcome = models.ContractOutcome(
@@ -643,7 +830,7 @@ def get_contract_outcomes(
 def check_is_admin(user_id: str, db: Session) -> bool:
     profile = db.query(models.Profile).filter_by(id=user_id).first()
     if profile:
-        return profile.is_admin
+        return bool(profile.is_admin)
     # Auto-bootstrap profile as non-admin if missing
     try:
         profile = models.Profile(id=uuid.UUID(user_id) if isinstance(user_id, str) else user_id, is_admin=False)
@@ -668,7 +855,40 @@ def get_user_profile(
         except Exception as e:
             db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to create profile: {e}")
-    return {"id": str(profile.id), "is_admin": profile.is_admin, "email": current_user.email}
+    return {"id": str(profile.id), "is_admin": profile.is_admin, "email": current_user.email, "tour_seen": bool(profile.tour_seen)}
+
+@app.post("/auth/tour-seen")
+def mark_tour_seen(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    profile = db.query(models.Profile).filter_by(id=current_user.id).first()
+    if profile:
+        profile.tour_seen = True
+        db.commit()
+    return {"status": "success"}
+
+@app.post("/auth/tour-reset")
+def reset_tour_seen(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    profile = db.query(models.Profile).filter_by(id=current_user.id).first()
+    if profile:
+        profile.tour_seen = False
+        db.commit()
+    return {"status": "success"}
+
+@app.get("/auth/check-email")
+def check_email(
+    email: str,
+    db: Session = Depends(get_db)
+):
+    result = db.execute(
+        sql_text("SELECT id FROM auth.users WHERE email = :email"),
+        {"email": email}
+    ).first()
+    return {"exists": result is not None}
 
 @app.post("/projects/{project_id}/ml-risk-prediction")
 def get_ml_risk_prediction(

@@ -11,12 +11,15 @@
   "dependencies": {
     "@base-ui/react": "^1.6.0",
     "@supabase/supabase-js": "^2.109.0",
+    "@tanstack/react-query": "^5.101.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.23.0",
     "next": "14.2.35",
     "react": "^18",
+    "react-csv": "^2.2.2",
     "react-dom": "^18",
+    "react-joyride": "^3.2.0",
     "shadcn": "^4.12.0",
     "tailwind-merge": "^3.6.0",
     "tailwindcss-animate": "^1.0.7",
@@ -25,6 +28,7 @@
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^18",
+    "@types/react-csv": "^1.1.10",
     "@types/react-dom": "^18",
     "eslint": "^8",
     "eslint-config-next": "14.2.35",
